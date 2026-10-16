@@ -14,7 +14,6 @@ export const NAV_ITEMS = [
   { to: ROUTES.users, label: "User Management", icon: Users },
   { to: ROUTES.drivers, label: "Driver Management", icon: Truck },
   { to: ROUTES.deliveries, label: "Delivery Management", icon: Package },
-  { to: ROUTES.complaints, label: "Report & Complaint", icon: Flag },
   { to: ROUTES.reports, label: "Reports & Analytics", icon: BarChart3 },
 ];
 

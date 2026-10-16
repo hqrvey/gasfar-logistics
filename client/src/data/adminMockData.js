@@ -20,36 +20,6 @@ export const INITIAL_DRIVERS = [
   ["DRV-2004", "James Mendoza", "Professional License", "Toyota Innova • GHI 3456", "Rejected", "Suspended"],
 ];
 
-export const INITIAL_COMPLAINTS = [
-  [
-    "CMP-3001",
-    "Juan Dela Cruz",
-    "Maria Santos",
-    "Late delivery / misconduct",
-    "Under Investigation",
-    "Aug 30, 2026",
-    "Driver arrived late and allegedly behaved unprofessionally.",
-  ],
-  [
-    "CMP-3002",
-    "Ana Reyes",
-    "Pedro Cruz",
-    "Unprofessional behavior",
-    "Pending Review",
-    "Aug 29, 2026",
-    "User reported inappropriate communication.",
-  ],
-  [
-    "CMP-3003",
-    "Sofia Ramos",
-    "User: Mark V.",
-    "Booking dispute",
-    "Resolved",
-    "Aug 27, 2026",
-    "Dispute was reviewed and resolved by admin.",
-  ],
-];
-
 export const DRIVER_DOCS = {
   profilePhoto: {
     title: "Profile Photo",
@@ -60,7 +30,7 @@ export const DRIVER_DOCS = {
     imgUrl: "https://rahahome.com/en/services/personal-driver/",
   },
   license: {
-    title: "Professional Driver's License",
+    title: "Driver's License",
     file: "drivers_license.jpg",
     size: "3.1 MB",
     type: "JPG",
@@ -71,8 +41,17 @@ export const DRIVER_DOCS = {
     imgUrl:
       "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=600&auto=format&fit=crop&q=60",
   },
-  orCr: {
-    title: "Vehicle OR/CR",
+  or: {
+    title: "Vehicle OR",
+    file: "or_cr_document.pdf",
+    size: "1.8 MB",
+    type: "PDF",
+    date: "Aug 12, 2025 • 10:26 AM",
+    imgUrl:
+      "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=600&auto=format&fit=crop&q=60",
+  },
+  cr: {
+    title: "Vehicle CR",
     file: "or_cr_document.pdf",
     size: "1.8 MB",
     type: "PDF",
@@ -81,7 +60,7 @@ export const DRIVER_DOCS = {
       "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=600&auto=format&fit=crop&q=60",
   },
   vehiclePhoto: {
-    title: "Vehicle Photo",
+    title: "Vehicle Backplate Photo",
     file: "vehicle_front.jpg",
     size: "4.2 MB",
     type: "JPG",

@@ -24,7 +24,6 @@ import DashboardPage from "../pages/admin/DashboardPage";
 import UsersPage from "../pages/admin/UsersPage";
 import DriversPage from "../pages/admin/DriversPage";
 import DeliveriesPage from "../pages/admin/DeliveriesPage";
-import ComplaintsPage from "../pages/admin/ComplaintsPage";
 import ReportsPage from "../pages/admin/ReportsPage";
 import AdminProfilePage from "../pages/admin/ProfilePage";
 import SettingsPage from "../pages/admin/SettingsPage";
@@ -74,7 +73,6 @@ function AppRoutes({
           <Route path="users" element={<UsersPage />} />
           <Route path="drivers" element={<DriversPage />} />
           <Route path="deliveries" element={<DeliveriesPage />} />
-          <Route path="complaints" element={<ComplaintsPage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="profile" element={<AdminProfilePage />} />

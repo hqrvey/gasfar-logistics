@@ -1,58 +1,53 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { MapContainer, TileLayer, Marker, Polyline, Popup, useMapEvents, useMap } from "react-leaflet";
-import L from "leaflet";
-import { MapPin, Navigation, Search, X, Plus, Minus } from "lucide-react";
-import "leaflet/dist/leaflet.css";
+import { setOptions, importLibrary } from "@googlemaps/js-api-loader";
+import { MapPin, Search, X, Plus, Minus } from "lucide-react";
 
-/* ═══ Map helpers ═══ */
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
-const pickupIcon = new L.Icon({ iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png", shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png", iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] });
-const dropoffIcon = new L.Icon({ iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png", shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png", iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] });
-const driverIcon = L.divIcon({
-  className: "live-driver-marker",
-  html: `<span class="live-driver-marker__pulse"></span><span class="live-driver-marker__dot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg></span>`,
-  iconSize: [40, 40], iconAnchor: [20, 20],
-});
+/* ═══ Setup ═══ */
+const GEOAPIFY_KEY = import.meta.env.VITE_GEOAPIFY_API_KEY;
+const GOOGLE_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+
+// Runs once when the file loads (not on every render)
+setOptions({ key: GOOGLE_KEY, v: "weekly" });
+
+const MARKER_BASE = "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/";
+const PICKUP_ICON_URL = MARKER_BASE + "marker-icon-2x-blue.png";
+const DROPOFF_ICON_URL = MARKER_BASE + "marker-icon-2x-orange.png";
+
+/* ═══ Geoapify helpers ═══ */
+
+// Click on map -> address
 const reverseGeocode = async (lat, lng) => {
-  try { const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`, { headers: { "Accept-Language": "en" } }); const data = await res.json(); return data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`; }
-  catch { return `${lat.toFixed(5)}, ${lng.toFixed(5)}`; }
+  try {
+    const res = await fetch(
+      `https://api.geoapify.com/v1/geocode/reverse?lat=${lat}&lon=${lng}&format=json&apiKey=${GEOAPIFY_KEY}`
+    );
+    const data = await res.json();
+    return data.results?.[0]?.formatted || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  } catch {
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }
 };
+
+// Route between two points (Geoapify routing)
 const fetchRoute = async (pickup, dropoff) => {
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${pickup.lng},${pickup.lat};${dropoff.lng},${dropoff.lat}?overview=full&geometries=geojson`;
-    const res = await fetch(url); const data = await res.json();
-    if (data.routes && data.routes.length > 0) {
-      const route = data.routes[0];
-      const coords = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-      const distanceKm = (route.distance / 1000).toFixed(1);
-      const totalMins = Math.round(route.duration / 60);
+    const url =
+      `https://api.geoapify.com/v1/routing?` +
+      `waypoints=${pickup.lat},${pickup.lng}|${dropoff.lat},${dropoff.lng}` +
+      `&mode=drive&apiKey=${GEOAPIFY_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const feature = data.features?.[0];
+    if (feature) {
+      // Geoapify gives [lng, lat]; Google wants { lat, lng }
+      const coords = feature.geometry.coordinates.flat().map(([lng, lat]) => ({ lat, lng }));
+      const distanceKm = (feature.properties.distance / 1000).toFixed(1);
+      const totalMins = Math.round(feature.properties.time / 60);
       const hours = Math.floor(totalMins / 60), mins = totalMins % 60;
       const durationLabel = hours > 0 ? `${hours}h${mins > 0 ? ` ${mins}m` : ""}` : `${mins} min`;
       return { coords, distanceKm, durationMins: totalMins, durationLabel };
     }
   } catch { /* silent */ }
-  return null;
-};
-const MapClickHandler = ({ onPickup, onDropoff, mode }) => {
-  useMapEvents({ click: async (e) => { const { lat, lng } = e.latlng; const address = await reverseGeocode(lat, lng); if (mode === "pickup") onPickup({ lat, lng, address }); else onDropoff({ lat, lng, address }); } });
-  return null;
-};
-const MapFocus = ({ pickup, dropoff }) => {
-  const map = useMap();
-  const prevPickup = useRef(null), prevDropoff = useRef(null);
-  useEffect(() => {
-    const pChanged = pickup && (!prevPickup.current || prevPickup.current.lat !== pickup.lat || prevPickup.current.lng !== pickup.lng);
-    const dChanged = dropoff && (!prevDropoff.current || prevDropoff.current.lat !== dropoff.lat || prevDropoff.current.lng !== dropoff.lng);
-    if (pickup && dropoff && (pChanged || dChanged)) { const bounds = L.latLngBounds([pickup.lat, pickup.lng], [dropoff.lat, dropoff.lng]); map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 }); }
-    else if (pChanged) map.flyTo([pickup.lat, pickup.lng], 16, { duration: 0.8 });
-    else if (dChanged) map.flyTo([dropoff.lat, dropoff.lng], 16, { duration: 0.8 });
-    prevPickup.current = pickup; prevDropoff.current = dropoff;
-  }, [pickup, dropoff, map]);
   return null;
 };
 
@@ -64,19 +59,159 @@ const MapPicker = React.forwardRef(({ onPickupChange, onDropoffChange, onRouteCh
   const [routeInfo, setRouteInfo] = useState(null);
   const [clickMode, setClickMode] = useState("pickup");
   const [loading, setLoading] = useState(false);
-  const mapRef = useRef(null);
+  const [mapReady, setMapReady] = useState(false);
+
+  const mapRef = useRef(null);           // the Google map
+  const mapDivRef = useRef(null);        // the <div> the map is drawn in
+  const infoWindowRef = useRef(null);    // the popup
+  const pickupMarkerRef = useRef(null);
+  const dropoffMarkerRef = useRef(null);
+  const driverMarkerRef = useRef(null);
+  const routeLineRef = useRef(null);
+  const prevPickup = useRef(null);
+  const prevDropoff = useRef(null);
+
   React.useImperativeHandle(ref, () => ({ getMap: () => mapRef.current, setZoom: (z) => mapRef.current?.setZoom(z), getZoom: () => mapRef.current?.getZoom?.() ?? 13 }));
-  const defaultCenter = [14.7969, 120.8787];
+
+  const defaultCenter = { lat: 14.7969, lng: 120.8787 };
+  const getUserLocation = () => {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
+      () => resolve(null)
+    );
+  });
+};
+
   const handlePickup = useCallback(async (pin) => { setPickup(pin); if (!singlePoint) setClickMode("dropoff"); onPickupChange && onPickupChange(pin); }, [onPickupChange, singlePoint]);
   const handleDropoff = useCallback(async (pin) => { setDropoff(pin); if (!singlePoint) setClickMode("pickup"); onDropoffChange && onDropoffChange(pin); }, [onDropoffChange, singlePoint]);
+
+  // The map click listener is added only once, so it would "remember" old values.
+  // Keeping the latest values in a ref fixes that.
+  const latest = useRef({});
+  latest.current = { clickMode, viewOnly, handlePickup, handleDropoff };
+
+  /* 1. Create the map (once) */
+useEffect(() => {
+  async function loadMap() {
+    const { Map } = await importLibrary("maps");
+    const userLocation = await getUserLocation();
+
+    mapRef.current = new Map(mapDivRef.current, {
+      center: userLocation || defaultCenter,
+      zoom: 14,
+      zoomControl: false,
+      streetViewControl: false,
+      mapTypeControl: false,
+      fullscreenControl: false,
+    });
+    infoWindowRef.current = new google.maps.InfoWindow();
+
+    mapRef.current.addListener("click", async (e) => {
+      const { clickMode, viewOnly, handlePickup, handleDropoff } = latest.current;
+      if (viewOnly) return;
+      const lat = e.latLng.lat(), lng = e.latLng.lng();
+      const address = await reverseGeocode(lat, lng);
+      if (clickMode === "pickup") handlePickup({ lat, lng, address });
+      else handleDropoff({ lat, lng, address });
+    });
+    setMapReady(true);
+  }
+  loadMap();
+}, []);
+
+  /* 2. Draw / move / remove a marker */
+  const showMarker = (markerRef, point, icon, labelClass, labelText) => {
+    if (!point) {
+      if (markerRef.current) { markerRef.current.setMap(null); markerRef.current = null; }
+      return;
+    }
+    const position = { lat: point.lat, lng: point.lng };
+    if (!markerRef.current) {
+      const marker = new google.maps.Marker({ map: mapRef.current, position, icon });
+      marker.addListener("click", () => {
+        infoWindowRef.current.setContent(marker.popupHtml);
+        infoWindowRef.current.open(mapRef.current, marker);
+      });
+      markerRef.current = marker;
+    } else {
+      markerRef.current.setPosition(position);
+    }
+    markerRef.current.popupHtml =
+      `<div class="map-popup"><span class="map-popup__label ${labelClass}">${labelText}</span><p class="map-popup__address">${point.address || "Live location"}</p></div>`;
+  };
+
+  useEffect(() => {
+    if (!mapReady) return;
+    const size = new google.maps.Size(25, 41);
+    showMarker(pickupMarkerRef, pickup, { url: PICKUP_ICON_URL, scaledSize: size }, "pickup", pinLabel);
+    showMarker(dropoffMarkerRef, dropoff, { url: DROPOFF_ICON_URL, scaledSize: size }, "dropoff", "DROP-OFF LOCATION");
+  }, [pickup, dropoff, mapReady, pinLabel]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    const driverIcon = { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: "#2563eb", fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 3 };
+    showMarker(driverMarkerRef, driverCoords && { ...driverCoords, address: "Live location" }, driverIcon, "pickup", "YOUR RIDER");
+  }, [driverCoords, mapReady]);
+
+  /* 3. Zoom to the pins when they change */
+  useEffect(() => {
+    if (!mapReady) return;
+    const map = mapRef.current;
+    const pChanged = pickup && (!prevPickup.current || prevPickup.current.lat !== pickup.lat || prevPickup.current.lng !== pickup.lng);
+    const dChanged = dropoff && (!prevDropoff.current || prevDropoff.current.lat !== dropoff.lat || prevDropoff.current.lng !== dropoff.lng);
+    if (pickup && dropoff && (pChanged || dChanged)) {
+      const bounds = new google.maps.LatLngBounds();
+      bounds.extend({ lat: pickup.lat, lng: pickup.lng });
+      bounds.extend({ lat: dropoff.lat, lng: dropoff.lng });
+      map.fitBounds(bounds, 60);
+    } else if (pChanged) {
+      map.panTo({ lat: pickup.lat, lng: pickup.lng }); map.setZoom(16);
+    } else if (dChanged) {
+      map.panTo({ lat: dropoff.lat, lng: dropoff.lng }); map.setZoom(16);
+    }
+    prevPickup.current = pickup; prevDropoff.current = dropoff;
+  }, [pickup, dropoff, mapReady]);
+
+  /* 4. Get the route from Geoapify */
   useEffect(() => {
     if (pickup && dropoff) {
       setLoading(true);
-      fetchRoute(pickup, dropoff).then((result) => { setLoading(false); if (result) { setRoute(result.coords); const info = { distance: result.distanceKm, duration: result.durationMins, durationLabel: result.durationLabel }; setRouteInfo(info); onRouteChange && onRouteChange(info); } });
+      fetchRoute(pickup, dropoff).then((result) => {
+        setLoading(false);
+        if (result) {
+          setRoute(result.coords);
+          const info = { distance: result.distanceKm, duration: result.durationMins, durationLabel: result.durationLabel };
+          setRouteInfo(info);
+          onRouteChange && onRouteChange(info);
+        }
+      });
     } else { setRoute(null); setRouteInfo(null); }
-  }, [pickup, dropoff, onRouteChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickup, dropoff]);
+
+  /* 5. Draw the route line on the map */
+  useEffect(() => {
+    if (!mapReady) return;
+    if (routeLineRef.current) { routeLineRef.current.setMap(null); routeLineRef.current = null; }
+    if (route) {
+      routeLineRef.current = new google.maps.Polyline({
+        map: mapRef.current,
+        path: route,
+        strokeColor: "#0D1B3E",
+        strokeWeight: 5,
+        strokeOpacity: 0.8,
+      });
+    }
+  }, [route, mapReady]);
+
   useEffect(() => { setPickup(pickupCoords ?? null); setDropoff(dropoffCoords ?? null); }, [pickupCoords, dropoffCoords]);
   useEffect(() => { if (mapMode) setClickMode(mapMode); }, [mapMode]);
+
   return (
     <div className="map-picker">
       {loading && <div className="map-loading-bar"><span>Calculating route…</span></div>}
@@ -86,15 +221,7 @@ const MapPicker = React.forwardRef(({ onPickupChange, onDropoffChange, onRouteCh
           <button className={`map-mode-btn ${clickMode === "dropoff" ? "active-dropoff" : ""}`} onClick={() => setClickMode("dropoff")}><MapPin size={13} /> Set Drop-off</button>
         </div>
       )}
-      <MapContainer center={defaultCenter} zoom={13} className="map-picker__map" ref={mapRef} zoomControl={false}>
-        <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        <MapFocus pickup={pickup} dropoff={dropoff} />
-        {!viewOnly && <MapClickHandler onPickup={handlePickup} onDropoff={handleDropoff} mode={clickMode} />}
-        {pickup && (<Marker position={[pickup.lat, pickup.lng]} icon={pickupIcon}><Popup><div className="map-popup"><span className="map-popup__label pickup">{pinLabel}</span><p className="map-popup__address">{pickup.address}</p></div></Popup></Marker>)}
-        {dropoff && (<Marker position={[dropoff.lat, dropoff.lng]} icon={dropoffIcon}><Popup><div className="map-popup"><span className="map-popup__label dropoff">DROP-OFF LOCATION</span><p className="map-popup__address">{dropoff.address}</p></div></Popup></Marker>)}
-        {driverCoords && (<Marker position={[driverCoords.lat, driverCoords.lng]} icon={driverIcon}><Popup><div className="map-popup"><span className="map-popup__label pickup">YOUR RIDER</span><p className="map-popup__address">Live location</p></div></Popup></Marker>)}
-        {route && <Polyline positions={route} pathOptions={{ color: "#0D1B3E", weight: 5, opacity: 0.8 }} />}
-      </MapContainer>
+      <div ref={mapDivRef} className="map-picker__map" />
     </div>
   );
 });
@@ -109,9 +236,11 @@ const MapSearchBar = ({ mode = "pickup", onSearch }) => {
     if (val.length < 3) { setResults([]); return; }
     setLoading(true);
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(val)}&countrycodes=ph&limit=5`, { headers: { "Accept-Language": "en" } });
+      const res = await fetch(
+        `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(val)}&filter=countrycode:ph&limit=5&format=json&apiKey=${GEOAPIFY_KEY}`
+      );
       const data = await res.json();
-      setResults(data.map(d => ({ label: d.display_name.split(",")[0], address: d.display_name, lat: parseFloat(d.lat), lng: parseFloat(d.lon) })));
+      setResults((data.results || []).map(d => ({ label: d.name || d.formatted.split(",")[0], address: d.formatted, lat: Number(d.lat), lng: Number(d.lon) })));
     } catch { setResults([]); }
     setLoading(false);
   };

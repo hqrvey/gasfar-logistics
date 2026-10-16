@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { FiX } from "react-icons/fi";
 import { ArrowLeft, Check, Navigation, Package, ShieldCheck, TriangleAlert, Truck, Zap, ZapOff } from "lucide-react";
 import { useBookings } from "../../hooks/useBookings.js";
@@ -142,6 +142,18 @@ const DriverHomePage = () => {
   const [activeTab, setActiveTab] = useState("available");
   const [mapExpanded, setMapExpanded] = useState(false);
   const mapRef = useRef(null);
+
+  const [myLocation, setMyLocation] = useState(null);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const id = navigator.geolocation.watchPosition(
+      (pos) => setMyLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (err) => console.warn("Location error:", err.message),
+      { enableHighAccuracy: true }
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, []);
 
   const expanded = bookings.find((b) => b.id === expandedId) || null;
 

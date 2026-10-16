@@ -23,8 +23,9 @@ const DOC_GROUPS = [
   {
     title: "Vehicle",
     tabs: [
-      { id: "orCr", label: "Vehicle OR/CR", icon: FileText },
-      { id: "vehiclePhoto", label: "Vehicle Photo", icon: CarFront },
+      { id: "or", label: "Vehicle OR", icon: FileText },
+      { id: "cr", label: "Vehicle CR", icon: FileText },
+      { id: "vehiclePhoto", label: "Vehicle Backplate Photo", icon: CarFront },
     ],
   },
 ];
@@ -102,7 +103,6 @@ export default function DriverVerificationModal({
         </div>
 
         <div className="modalGridBody">
-          {/* Left: document tabs */}
           <div className="modalSidebar">
             {DOC_GROUPS.map(({ title, tabs }, groupIndex) => (
               <div key={title} style={groupIndex ? { marginTop: "1rem" } : undefined}>
