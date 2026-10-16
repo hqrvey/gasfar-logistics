@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { FiPlus, FiX } from "react-icons/fi";
+import { FiPlus, FiArrowDown, FiX } from "react-icons/fi";
 import { Check, CreditCard, ShieldCheck, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import { AppHeader } from "../../layouts/ClientLayout.jsx";
 import { SqCard, Field } from "../../components/client/booking/BookingUI.jsx";
@@ -23,7 +23,10 @@ const TopupModal = ({ onClose, onSubmit }) => {
             <div className="modal-notice"><ShieldCheck size={14} /><span>Funds reflect immediately. Commission is deducted per successful trip only.</span></div>
           </div>
         </div>
-        <div className="modal-foot"><button className="modal-btn modal-btn--ghost" onClick={onClose}>Cancel</button><button className="modal-btn modal-btn--primary" disabled={amount < 50} onClick={() => onSubmit(amount, method.toUpperCase())}>Top Up {peso(amount)}</button></div>
+        <div className="modal-foot">
+          <button className="modal-btn modal-btn--ghost" onClick={onClose}>Cancel</button>
+          <button className="modal-btn modal-btn--primary" disabled={amount < 50} onClick={() => onSubmit(amount, method.toUpperCase())}>Top Up {peso(amount)}</button>
+        </div>
       </div>
     </div>
   );
@@ -52,7 +55,10 @@ const DriverWalletPage = () => {
               <div className="wallet-balance__label">Available Balance</div>
               <div className="wallet-balance__value">{peso(balance)}</div>
               <div className="wallet-balance__note"><Wallet size={13} />{low ? <>You need at least <strong>{peso(DRIVER_WALLET.minRequired)}</strong> to accept bookings. Top up now.</> : <>Minimum required to accept bookings: <strong>{peso(DRIVER_WALLET.minRequired)}</strong></>}</div>
-              <button className="btn-wallet-topup" onClick={() => setShowTopup(true)}><FiPlus size={14} /> Top Up</button>
+              <div >
+                <button className="btn-wallet-topup" onClick={() => setShowTopup(true)}><FiPlus size={14} /> Top Up</button>
+                <button className="btn-wallet-withdraw" onClick={() => {}}><FiArrowDown size={14} /> Withdraw</button>
+              </div>
             </div>
             <div className="wallet-stats">
               <div className="wallet-stat"><span className="wallet-stat__icon wallet-stat__icon--in"><TrendingUp size={16} /></span><div><p className="wallet-stat__label">This week's commission</p><p className="wallet-stat__value">−{peso(50.5)}</p></div></div>

@@ -24,9 +24,10 @@ const ChangeVehicleModal = ({ current, onClose, onSubmit }) => {
   const [type, setType] = useState(current.type);
   const [plate, setPlate] = useState(current.plate || "");
   const [platePhoto, setPlatePhoto] = useState(null);
-  const [crOr, setCrOr] = useState(null);
+  const [or, setOr] = useState(null);
+  const [cr, setCr] = useState(null);
   const [backplate, setBackplate] = useState(null);
-  const valid = plate.trim() && platePhoto && crOr && backplate;
+  const valid = plate.trim() && platePhoto && or && cr && backplate;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -56,7 +57,8 @@ const ChangeVehicleModal = ({ current, onClose, onSubmit }) => {
               onChange={(e) => setPlate(e.target.value.toUpperCase().slice(0, 12))}
             />
             <FileUpload label="Plate Number Photo" imageOnly required value={platePhoto} onChange={setPlatePhoto} />
-            <FileUpload label="Vehicle CR/OR" required value={crOr} onChange={setCrOr} />
+            <FileUpload label="Vehicle OR" required value={or} onChange={setOr} />
+            <FileUpload label="Vehicle CR" required value={cr} onChange={setCr} />
             <FileUpload label="Vehicle Backplate Photo" imageOnly required value={backplate} onChange={setBackplate} />
             <div className="modal-notice">
               <ShieldCheck size={14} />
