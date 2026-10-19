@@ -6,7 +6,8 @@ export const peso = (value) => `₱${Number(value).toLocaleString()}`;
 
 export const STATUS = {
   pending: { label: "Waiting for driver", group: "ongoing", cls: "badge-pending" },
-  accepted: { label: "Driver OTW", group: "ongoing", cls: "badge-ongoing" },
+  accepted: { label: "On the way to pickup", group: "ongoing", cls: "badge-ongoing" },
+  at_pickup: { label: "At pickup", group: "ongoing", cls: "badge-ongoing" },
   picked_up: { label: "In Transit", group: "ongoing", cls: "badge-ongoing" },
   in_transit: { label: "In Transit", group: "ongoing", cls: "badge-ongoing" },
   arrived: { label: "Arrived", group: "ongoing", cls: "badge-ongoing" },
@@ -18,12 +19,24 @@ export const STATUS = {
 export const statusOf = (status) => STATUS[status] || STATUS.pending;
 export const groupOf = (status) => statusOf(status).group;
 
-export const DRIVER_FLOW = ["accepted", "picked_up", "arrived", "delivered"];
+// The five visible tracking stages. Pending and cancelled are separate states.
+export const DRIVER_FLOW = ["accepted", "at_pickup", "picked_up", "arrived", "delivered"];
+
+export const ACTIVE_DELIVERY_STATUSES = ["accepted", "at_pickup", "picked_up", "arrived"];
+
+export const DELIVERY_STATUS_LABELS = {
+  accepted: "Driver is on the way to pickup",
+  at_pickup: "Driver has arrived at pickup",
+  picked_up: "Package picked up — in transit",
+  arrived: "Driver has arrived at drop-off",
+  delivered: "Delivered",
+};
 
 export const DRIVER_ACTION = {
   pending: "Accept Booking",
-  accepted: "Heading to Pickup — Start Trip",
-  picked_up: "Mark as Arrived",
+  accepted: "I Have Arrived at Pickup",
+  at_pickup: "Confirm Package Pickup",
+  picked_up: "I Have Arrived at Drop-off",
   arrived: "Confirm Delivery (Enter PIN)",
 };
 

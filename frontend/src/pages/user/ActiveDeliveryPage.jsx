@@ -1,24 +1,26 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiPhone, FiX } from "react-icons/fi";
-import { ArrowLeft, ArrowRight, Check, Clock, MapPin, Navigation, Search, ShieldCheck, Star, TriangleAlert } from "lucide-react";
+import { FiX } from "react-icons/fi";
+import { ArrowLeft, ArrowRight, Check, Clock, MapPin, Navigation, Search, Star, TriangleAlert } from "lucide-react";
 import { useBookings } from "../../hooks/useBookings.js";
-import { bookingStore } from "../../services/bookingStore.js";
+import { ACTIVE_DELIVERY_STATUSES, DELIVERY_STATUS_LABELS, DRIVER_FLOW } from "../../utils/helpers.js";
 import { MapPicker } from "../../components/common/MapComponents.jsx";
-import AppHeader from "../../components/common/AppHeader.jsx";
 import UserLayout from "../../layouts/UserLayout.jsx";
 import { EmptyState, Field } from "../../components/common/BookingUI.jsx";
 import { MOCK_NOTIFICATIONS_USER } from "../../data/demo/clientMockData.js";
 
 /* ═══ Active Delivery (user) ═══ */
 const ACTIVE_STATUS_LABEL = {
-  pending:   { label: "Finding a driver for your booking", short: "Finding driver" },
-  accepted:  { label: "Driver is on the way to pickup", short: "On the way" },
-  picked_up: { label: "Package picked up — in transit", short: "In transit" },
-  arrived:   { label: "Driver has arrived at drop-off", short: "At drop-off" },
-  delivered: { label: "Delivered", short: "Delivered" },
+  pending: { label: "Finding a driver for your booking", short: "Finding driver" },
+  accepted: { label: DELIVERY_STATUS_LABELS.accepted, short: "On the way" },
+  at_pickup: { label: DELIVERY_STATUS_LABELS.at_pickup, short: "At pickup" },
+  picked_up: { label: DELIVERY_STATUS_LABELS.picked_up, short: "In transit" },
+  arrived: { label: DELIVERY_STATUS_LABELS.arrived, short: "At drop-off" },
+  delivered: { label: DELIVERY_STATUS_LABELS.delivered, short: "Delivered" },
 };
-const ACTIVE_STAGES = ["accepted", "picked_up", "arrived", "delivered"];
+
+// The customer's progress tracker shows all five driver stages.
+const ACTIVE_STAGES = DRIVER_FLOW;
 const ActiveDeliveryListCard = ({ order, onOpen }) => {
   const isPending = order.status === "pending" || !order.driver;
   if (isPending) {
@@ -35,8 +37,7 @@ const ActiveDeliveryListCard = ({ order, onOpen }) => {
       </button>
     );
   }
-  const etaMins = Math.max(1, Math.ceil(order.etaMins || 8));
-  const headingTo = (order.status === "picked_up" || order.status === "arrived") ? "drop-off" : "pickup";
+  const gpsAvailable = Boolean(order.driverLocation && order.locationUpdatedAt);
   return (
     <button type="button" className="preview-card" onClick={() => onOpen(order.id)}>
       <span className="preview-card__avatar">{order.driver.name.charAt(0)}</span>
@@ -45,56 +46,113 @@ const ActiveDeliveryListCard = ({ order, onOpen }) => {
         <p className="preview-card__driver">{order.driver.name}<span className="preview-card__vehicle">· {order.driver.vehicleType} · {order.driver.plate}</span></p>
         <p className="preview-card__route">{order.pickup.address.split(",")[0]} → {order.dropoff.address.split(",")[0]}</p>
       </div>
-      <div className="preview-card__right"><div className="preview-card__eta"><span className="preview-card__eta-value">{etaMins}</span><span className="preview-card__eta-unit">min</span></div><span className="preview-card__eta-to">to {headingTo}</span></div>
+      <div className="preview-card__right">
+        <span className="preview-card__eta-label">Driver GPS</span>
+        <span className="preview-card__eta-to">{gpsAvailable ? "Available" : "Unavailable"}</span>
+      </div>
       <span className="preview-card__arrow"><ArrowRight size={16} /></span>
     </button>
   );
 };
-const ActiveDeliveryTracking = ({ order, onBack }) => {
-  const [driverPos, setDriverPos] = useState(order.driverLocation || order.pickup);
-  const [eta, setEta] = useState(order.etaMins || 8);
+const ActiveDeliveryTracking = ({ order, onBack, onHistory }) => {
+  const [pickupEta, setPickupEta] = useState(null);
+  const [now, setNow] = useState(Date.now());
+
+  // Update the "last GPS update" message even if no new position arrives.
   useEffect(() => {
-    const target = (order.status === "picked_up" || order.status === "arrived") ? order.dropoff : order.pickup;
-    const timer = setInterval(() => {
-      setDriverPos((p) => { const dLat = target.lat - p.lat; const dLng = target.lng - p.lng; if (Math.hypot(dLat, dLng) < 0.0008) return p; return { lat: p.lat + dLat * 0.08, lng: p.lng + dLng * 0.08 }; });
-      setEta((e) => Math.max(0, +(e - 0.25).toFixed(2)));
-    }, 3000);
+    const timer = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(timer);
-  }, [order]);
+  }, []);
+
   const currentIdx = ACTIVE_STAGES.indexOf(order.status);
+  const finished = order.status === "delivered" || order.status === "cancelled";
+  const gpsAge = now - (order.locationUpdatedAt || 0);
+  const gpsFresh = Boolean(order.driverLocation && order.locationUpdatedAt && gpsAge < 120000);
+  const headingToPickup = order.status === "accepted";
   const statusLabel = ACTIVE_STATUS_LABEL[order.status]?.label || "Tracking";
-  const headingTo = (order.status === "picked_up" || order.status === "arrived") ? "drop-off" : "pickup";
+
+  let arrivalMessage = "Delivery in progress";
+  if (headingToPickup) arrivalMessage = pickupEta ? `${pickupEta} min to pickup` : "Calculating pickup ETA…";
+  if (order.status === "at_pickup") arrivalMessage = "Driver is at the pickup location";
+  if (order.status === "picked_up") arrivalMessage = "Package is on the way to drop-off";
+  if (order.status === "arrived") arrivalMessage = "Driver is at the drop-off location";
+  if (order.status === "delivered") arrivalMessage = "Delivery completed";
+  if (order.status === "cancelled") arrivalMessage = "This delivery was cancelled";
+
+  // Only the real Geoapify driver->pickup road route provides this ETA.
+  const handleDriverRoute = (route) => setPickupEta(route?.duration || null);
+
   return (
     <div className="bd-shell">
       <div className="bd-panel">
         <div className="bd-inner">
-          <button type="button" className="active-back-link" onClick={onBack}><ArrowLeft size={14} /> All active deliveries</button>
+          <button type="button" className="active-back-link" onClick={onBack}>
+            <ArrowLeft size={14} /> All active deliveries
+          </button>
           <div className="bd-step-head">
-            <div className="bd-step-meta"><span className="bd-step-count">Order {order.id}</span><span className="bd-step-divider" /><span className="bd-step-eyebrow">Live Tracking</span></div>
+            <div className="bd-step-meta">
+              <span className="bd-step-count">Order {order.id}</span>
+              <span className="bd-step-divider" />
+              <span className="bd-step-eyebrow">{finished ? "Delivery update" : "Delivery tracking"}</span>
+            </div>
             <h2 className="bd-step-title">{statusLabel}</h2>
-            <p className="bd-step-desc">Follow your rider on the map in real time. ETA updates automatically.</p>
+            <p className="bd-step-desc">
+              {finished ? arrivalMessage : "Track your delivery status below."}
+            </p>
           </div>
           <div className="active-eta-card">
             <div className="active-eta-card__icon"><Clock size={22} /></div>
-            <div className="active-eta-card__body"><div className="active-eta-card__label">Estimated arrival</div><div className="active-eta-card__value">{eta <= 0 ? "Arriving now" : `${Math.max(1, Math.ceil(eta))} min`}</div><div className="active-eta-card__sub">to {headingTo}</div></div>
-            <div className="active-eta-card__live"><span className="live-dot" /> LIVE</div>
-          </div>
-          <div className="active-timeline">
-            {ACTIVE_STAGES.map((s, i) => {
-              const done = i < currentIdx, active = i === currentIdx;
-              return (<div key={s} className={`active-timeline__item${done ? " done" : ""}${active ? " active" : ""}`}><span className="active-timeline__dot">{done ? <Check size={12} /> : null}</span><span className="active-timeline__label">{ACTIVE_STATUS_LABEL[s].label}</span></div>);
-            })}
-          </div>
-          <div className="active-driver-card">
-            <div className="active-driver-card__avatar">{order.driver.name.charAt(0)}</div>
-            <div className="active-driver-card__body">
-              <p className="active-driver-card__name">{order.driver.name}</p>
-              <p className="active-driver-card__meta"><Star size={12} fill="#F47B20" color="#F47B20" />{order.driver.rating} · {order.driver.trips} trips</p>
-              <p className="active-driver-card__vehicle">{order.driver.vehicleType} · {order.driver.plate}</p>
+            <div className="active-eta-card__body">
+              <div className="active-eta-card__label">Current delivery update</div>
+              <div className="active-eta-card__value">{arrivalMessage}</div>
+              {!finished && (
+                <div className="active-eta-card__sub">
+                  {gpsFresh
+                    ? "Driver GPS location updated recently"
+                    : "Driver GPS unavailable or out of date; tracking route may not be shown"}
+                </div>
+              )}
             </div>
+            {gpsFresh && !finished && (
+              <div className="active-eta-card__live"><span className="live-dot" /> GPS</div>
+            )}
           </div>
+
+          {order.status !== "cancelled" && (
+            <div className="active-timeline" aria-label="Delivery progress">
+              {ACTIVE_STAGES.map((status, index) => {
+                const done = index < currentIdx || order.status === "delivered";
+                const active = index === currentIdx && order.status !== "delivered";
+                return (
+                  <div key={status} className={`active-timeline__item${done ? " done" : ""}${active ? " active" : ""}`}>
+                    <span className="active-timeline__dot">{done ? <Check size={12} /> : null}</span>
+                    <span className="active-timeline__label">{ACTIVE_STATUS_LABEL[status].label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {finished && (
+            <div className="active-actions">
+              <button type="button" className="btn-bd-next" onClick={onHistory}>
+                View delivery history <ArrowRight size={14} />
+              </button>
+            </div>
+          )}
+
+          {order.driver && (
+            <div className="active-driver-card">
+              <div className="active-driver-card__avatar">{order.driver.name.charAt(0)}</div>
+              <div className="active-driver-card__body">
+                <p className="active-driver-card__name">{order.driver.name}</p>
+                <p className="active-driver-card__meta"><Star size={12} fill="#F47B20" color="#F47B20" />{order.driver.rating} · {order.driver.trips} trips</p>
+                <p className="active-driver-card__vehicle">{order.driver.vehicleType} · {order.driver.plate}</p>
+              </div>
+            </div>
+          )}
           <div className="active-details-card">
-            <div className="active-details-row"><span className="active-details-row__label">Call Driver</span><span className="active-details-row__value">{order.driver.phone || "—"}</span></div>
+            <div className="active-details-row"><span className="active-details-row__label">Call Driver</span><span className="active-details-row__value">{order.driver?.phone || "—"}</span></div>
             <div className="active-details-route"><span className="route-dot pickup" /><div className="active-details-route__body"><p className="active-details-route__label">Pickup</p><p className="active-details-route__address">{order.pickup.address}</p></div></div>
             <div className="active-details-route"><span className="route-dot dropoff" /><div className="active-details-route__body"><p className="active-details-route__label">Drop-off</p><p className="active-details-route__address">{order.dropoff.address}</p></div></div>
             <div className="active-details-row"><span className="active-details-row__label">Items</span><span className="active-details-row__value">{order.itemDetails}</span></div>
@@ -103,7 +161,16 @@ const ActiveDeliveryTracking = ({ order, onBack }) => {
           </div>
         </div>
       </div>
-      <div className="bd-map"><MapPicker viewOnly pickupCoords={order.pickup} dropoffCoords={order.dropoff} driverCoords={driverPos} /></div>
+      <div className="bd-map">
+        <MapPicker
+          viewOnly
+          pickupCoords={order.pickup}
+          dropoffCoords={order.dropoff}
+          driverCoords={!finished && gpsFresh ? order.driverLocation : null}
+          showDriverToPickup={headingToPickup}
+          onDriverRouteChange={handleDriverRoute}
+        />
+      </div>
     </div>
   );
 };
@@ -178,7 +245,7 @@ const ActiveDeliveryPage = () => {
   const [tab, setTab] = useState("pending");
   const expandedOrder = orders.find((o) => o.id === expandedId) || null;
   const pendingOrders = orders.filter((o) => o.status === "pending");
-  const activeOrders = orders.filter((o) => ["accepted", "picked_up", "arrived"].includes(o.status));
+  const activeOrders = orders.filter((o) => ACTIVE_DELIVERY_STATUSES.includes(o.status));
   const visibleOrders = tab === "pending" ? pendingOrders : activeOrders;
 
   const handleCancel = (orderId, reason) => {
@@ -209,7 +276,11 @@ const ActiveDeliveryPage = () => {
         {expandedOrder.status === "pending" ? (
           <PendingDeliveryTracking order={expandedOrder} onBack={() => setExpandedId(null)} onCancel={handleCancel} />
         ) : (
-          <ActiveDeliveryTracking order={expandedOrder} onBack={() => setExpandedId(null)} onCancel={handleCancel} />
+          <ActiveDeliveryTracking
+            order={expandedOrder}
+            onBack={() => setExpandedId(null)}
+            onHistory={() => navigate("/history")}
+          />
         )}
       </UserLayout>
     );
@@ -243,7 +314,15 @@ const ActiveDeliveryPage = () => {
           </div>
         </div>
         <div className="bd-map">
-          {previewOrder ? (<MapPicker viewOnly pickupCoords={previewOrder.pickup} dropoffCoords={previewOrder.dropoff} driverCoords={previewOrder.driverLocation} />) : (<div className="bd-map__placeholder"><MapPin size={36} /><p>No route to preview</p></div>)}
+          {previewOrder ? (
+            <MapPicker
+              viewOnly
+              pickupCoords={previewOrder.pickup}
+              dropoffCoords={previewOrder.dropoff}
+              driverCoords={previewOrder.locationUpdatedAt && Date.now() - previewOrder.locationUpdatedAt < 120000 ? previewOrder.driverLocation : null}
+              showDriverToPickup={previewOrder.status === "accepted"}
+            />
+          ) : (<div className="bd-map__placeholder"><MapPin size={36} /><p>No route to preview</p></div>)}
         </div>
       </div>
     </UserLayout>

@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { FiX } from "react-icons/fi";
 import { ArrowLeft, Check, Navigation, Package, ShieldCheck, TriangleAlert, Truck, Zap, ZapOff } from "lucide-react";
 import { useBookings } from "../../hooks/useBookings.js";
 import { bookingStore } from "../../services/bookingStore.js";
-import { DRIVER_ACTION, DRIVER_FLOW, peso } from "../../utils/helpers.js";
+import { ACTIVE_DELIVERY_STATUSES, DRIVER_ACTION, DRIVER_FLOW, peso } from "../../utils/helpers.js";
 import { MOCK_DRIVER, MOCK_NOTIFICATIONS_DRIVER } from "../../data/demo/clientMockData.js";
 import AppHeader from "../../components/common/AppHeader.jsx";
 import { Field, EmptyState, RouteStrip } from "../../components/common/BookingUI.jsx";
@@ -16,15 +16,15 @@ const DeliveryPinModal = ({ booking, onConfirm, onClose }) => {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [resending, setResending] = useState(false);
-  const handleVerify = () => { if (pin.length !== 4) { setError("Please enter the 4-digit PIN."); return; } if (pin !== MOCK_DELIVERY_PIN) { setError("Incorrect PIN. Ask the recipient to check their SMS."); return; } onConfirm(); };
-  const handleResend = () => { setResending(true); alert(`[MOCK] Resending delivery PIN to ${booking.contactNumber}…`); setTimeout(() => setResending(false), 1200); };
+  const handleVerify = () => { if (pin.length !== 4) { setError("Please enter the 4-digit PIN."); return; } if (pin !== MOCK_DELIVERY_PIN) { setError("Incorrect demo PIN. Ask the recipient for 1234."); return; } onConfirm(); };
+  const handleResend = () => { setResending(true); alert(`[DEMO] No SMS is sent yet. Use PIN 1234 for testing.`); setTimeout(() => setResending(false), 1200); };
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="pin-modal" onClick={(e) => e.stopPropagation()}>
         <div className="pin-modal__icon"><ShieldCheck size={26} /></div>
         <h3 className="pin-modal__title">Confirm Delivery</h3>
-        <p className="pin-modal__desc">Ask the recipient for the 4-digit delivery PIN sent to their phone.</p>
-        <div className="pin-modal__recipient"><span className="pin-modal__recipient-label">Recipient</span><span className="pin-modal__recipient-value">{booking.customerName} · {booking.contactNumber}</span></div>
+        <p className="pin-modal__desc">Ask the recipient for their 4-digit delivery PIN. For this frontend demo, use 1234 (no SMS is sent yet).</p>
+        <div className="pin-modal__recipient"><span className="pin-modal__recipient-label">Recipient</span><span className="pin-modal__recipient-value">{booking.recipientName || booking.customerName} · {booking.recipientPhone || booking.contactNumber}</span></div>
         <input type="text" inputMode="numeric" maxLength={4} className={`pin-modal__input${error ? " pin-modal__input--error" : ""}`} placeholder="••••" value={pin} autoFocus onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, 4)); if (error) setError(""); }} />
         {error && <p className="pin-modal__error">{error}</p>}
         <button type="button" className="pin-modal__resend" onClick={handleResend} disabled={resending}>{resending ? "Sending…" : "Resend PIN to recipient"}</button>
@@ -78,13 +78,23 @@ const BookingExpand = ({ booking, onClose, onStatusChange }) => {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const currentIdx = DRIVER_FLOW.indexOf(booking.status === "pending" ? null : booking.status);
   const canAdvance = booking.status === "pending" || currentIdx < DRIVER_FLOW.length - 1;
-  const canCancelActive = ["accepted", "picked_up", "arrived"].includes(booking.status);
+  const canCancelActive = ACTIVE_DELIVERY_STATUSES.includes(booking.status);
   const handleAction = () => {
-    if (booking.status === "pending") { onStatusChange("accepted"); return; }
-    if (booking.status === "arrived") { setShowPinModal(true); return; }
+    if (booking.status === "pending") {
+      onStatusChange("accepted");
+      return;
+    }
+    if (booking.status === "arrived") {
+      setShowPinModal(true);
+      return;
+    }
+
+    // Accepted -> At pickup -> Picked up -> At drop-off -> Delivered.
     const next = DRIVER_FLOW[currentIdx + 1];
     onStatusChange(next);
-    if (next === "arrived") { alert(`[MOCK] Delivery PIN sent via SMS to recipient:\n${booking.customerName} · ${booking.contactNumber}`); }
+    if (next === "arrived") {
+      alert(`[DEMO] Ask the recipient for the delivery PIN (1234). No SMS has been sent.`);
+    }
   };
   const handleDecline = () => { if (confirm(`Decline booking ${booking.id}?`)) { onStatusChange("declined"); onClose(); } };
   const handleCancelActive = (reason) => { onStatusChange("cancelled", reason); onClose(); };
@@ -122,7 +132,15 @@ const BookingExpand = ({ booking, onClose, onStatusChange }) => {
   );
 };
 const ActiveDeliveryCard = ({ booking, status, onExpand }) => {
-  const getStatusInfo = (status) => { const info = { accepted: { label: "Heading to Pickup", color: "badge-accepted" }, picked_up: { label: "In Transit", color: "badge-in-transit" }, arrived: { label: "At Drop-off", color: "badge-arrived" } }; return info[status] || info.accepted; };
+  const getStatusInfo = (status) => {
+    const info = {
+      accepted: { label: "Heading to Pickup", color: "badge-accepted" },
+      at_pickup: { label: "At Pickup", color: "badge-accepted" },
+      picked_up: { label: "In Transit", color: "badge-in-transit" },
+      arrived: { label: "At Drop-off", color: "badge-arrived" },
+    };
+    return info[status] || info.accepted;
+  };
   const statusInfo = getStatusInfo(status);
   return (
     <button type="button" className="active-delivery-card" onClick={onExpand}>
@@ -142,20 +160,51 @@ const DriverHomePage = () => {
   const [expandedId, setExpandedId] = useState(null);
   const [online, setOnline] = useState(true);
   const [activeTab, setActiveTab] = useState("available");
-  const [mapExpanded, setMapExpanded] = useState(false);
-  const mapRef = useRef(null);
-
   const [myLocation, setMyLocation] = useState(null);
+  const [gpsMessage, setGpsMessage] = useState("Waiting for GPS location…");
 
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      setGpsMessage("This browser does not support location sharing.");
+      return;
+    }
     const id = navigator.geolocation.watchPosition(
-      (pos) => setMyLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      (err) => console.warn("Location error:", err.message),
-      { enableHighAccuracy: true }
+      (pos) => {
+        setMyLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGpsMessage("");
+      },
+      (err) => setGpsMessage(`GPS unavailable: ${err.message}`),
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
     );
     return () => navigator.geolocation.clearWatch(id);
   }, []);
+
+  // While this driver has an active job, share their real browser GPS position
+  // with the demo booking store. This works in tabs on the same origin only;
+  // the future backend must broadcast GPS updates between devices.
+  useEffect(() => {
+    if (!myLocation) return;
+
+    const now = Date.now();
+    for (const booking of bookings) {
+      if (!ACTIVE_DELIVERY_STATUSES.includes(booking.status)) continue;
+      if (booking.driver?.name !== MOCK_DRIVER.name) continue;
+
+      const last = booking.driverLocation;
+      const moved = !last || Math.hypot(
+        myLocation.lat - last.lat,
+        myLocation.lng - last.lng
+      ) > 0.0003; // Roughly 30 metres.
+      const old = now - (booking.locationUpdatedAt || 0) > 30000;
+
+      if (moved || old) {
+        bookingStore.update(booking.id, {
+          driverLocation: myLocation,
+          locationUpdatedAt: now,
+        });
+      }
+    }
+  }, [myLocation, bookings]);
 
   const expanded = bookings.find((b) => b.id === expandedId) || null;
 
@@ -164,8 +213,21 @@ const DriverHomePage = () => {
     const current = bookings.find((b) => b.id === expandedId);
     if (!current) return;
 
+    // Only allow the next stage. The future Express API must enforce this too.
+    const nextStatus = {
+      pending: "accepted",
+      accepted: "at_pickup",
+      at_pickup: "picked_up",
+      picked_up: "arrived",
+      arrived: "delivered",
+    }[current.status];
+    if (newStatus === "declined" && current.status !== "pending") return;
+    if (newStatus === "cancelled" && !ACTIVE_DELIVERY_STATUSES.includes(current.status)) return;
+    if (!["declined", "cancelled", nextStatus].includes(newStatus)) return;
+    if (current.status !== "pending" && current.driver?.name !== MOCK_DRIVER.name) return;
+
     if (newStatus === "declined") {
-      // Driver lang ang tumanggi — booking stays pending for other drivers & user
+      // Driver only declines the offer; booking stays pending for other drivers.
       bookingStore.update(expandedId, {
         declinedBy: [...(current.declinedBy || []), MOCK_DRIVER.name],
       });
@@ -195,8 +257,11 @@ const DriverHomePage = () => {
           plate: MOCK_DRIVER.vehicle.plate,
           phone: MOCK_DRIVER.phone,
         },
-        driverLocation: current.pickup,
-        etaMins: 8,
+        // Never invent a starting GPS position or ETA.
+        driverLocation: myLocation,
+        locationUpdatedAt: myLocation ? Date.now() : null,
+        etaMins: null,
+        acceptedAt: Date.now(),
       });
       setExpandedId(null);
       setActiveTab("active");
@@ -212,16 +277,26 @@ const DriverHomePage = () => {
       return;
     }
 
-    bookingStore.update(expandedId, { status: newStatus });
+    const timestamps = {
+      at_pickup: "arrivedAtPickupAt",
+      picked_up: "pickedUpAt",
+      arrived: "arrivedAtDropoffAt",
+    };
+    bookingStore.update(expandedId, {
+      status: newStatus,
+      ...(timestamps[newStatus] ? { [timestamps[newStatus]]: Date.now() } : {}),
+    });
   };
 
   const availableBookings = bookings.filter(
     (b) => b.status === "pending" && !(b.declinedBy || []).includes(MOCK_DRIVER.name)
   );
-  const activeDeliveries = bookings.filter((b) => ["accepted", "picked_up", "arrived"].includes(b.status) && b.driver?.name === MOCK_DRIVER.name);
+  const activeDeliveries = bookings.filter(
+    (b) => ACTIVE_DELIVERY_STATUSES.includes(b.status) && b.driver?.name === MOCK_DRIVER.name
+  );
    
     /* ── Subpage view kapag may naka-expand na booking ── */
-  if (expanded && ["pending", "accepted", "picked_up", "arrived"].includes(expanded.status)) {
+  if (expanded && ["pending", ...ACTIVE_DELIVERY_STATUSES].includes(expanded.status)) {
     const isPending = expanded.status === "pending";
     return (
       <div className="driver-shell">
@@ -243,10 +318,17 @@ const DriverHomePage = () => {
                   <p className="bd-step-desc">{isPending ? "Review the details and accept or decline this booking." : "Update the delivery status as you complete each step."}</p>
                 </div>
                 <BookingExpand booking={expanded} onClose={() => setExpandedId(null)} onStatusChange={handleStatusChange} />
+                {!isPending && gpsMessage && <p role="status" style={{ marginTop: 12, color: "#965c00" }}>{gpsMessage} Driver-to-pickup routing requires location permission.</p>}
               </div>
             </div>
             <div className="bd-map">
-              <MapPicker viewOnly pickupCoords={expanded.pickup} dropoffCoords={expanded.dropoff} />
+              <MapPicker
+                viewOnly
+                pickupCoords={expanded.pickup}
+                dropoffCoords={expanded.dropoff}
+                driverCoords={isPending ? null : myLocation}
+                showDriverToPickup={expanded.status === "accepted"}
+              />
             </div>
           </div>
         </div>
@@ -306,7 +388,7 @@ const DriverHomePage = () => {
             </div>
           </div>
           <div className="driver-home__map">
-            <MapPicker viewOnly pickupCoords={null} dropoffCoords={null} />
+            <MapPicker viewOnly pickupCoords={null} dropoffCoords={null} driverCoords={myLocation} />
           </div>
         </div>
       </div>

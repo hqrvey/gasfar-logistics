@@ -114,6 +114,7 @@ const VerificationStep = ({ phone, onVerified, onBack, showToast }) => {
     </>
   );
 };
+
 const PasswordStep = ({ data, errors, onChange, onSubmit, onBack, buttonLabel }) => (
   <>
     <PlainHeader title="Set Your Password" subtitle="Choose a password to secure your account." />
@@ -148,7 +149,8 @@ const DocumentsStep = ({ docs, onChange, onSubmit, onBack, showToast }) => {
     if (!docs.profilePhoto) e.profilePhoto = "Profile photo is required.";
     if (!docs.license) e.license = "Driver's license is required.";
   } else if (page === 2) {
-    if (!docs.crOr) e.crOr = "Vehicle CR/OR is required.";
+    if (!docs.or) e.or = "Vehicle OR is required.";
+    if (!docs.cr) e.cr = "Vehicle CR is required.";
     if (!docs.backplate) e.backplate = "Backplate photo is required.";
   }
   return e;
@@ -190,7 +192,8 @@ const DocumentsStep = ({ docs, onChange, onSubmit, onBack, showToast }) => {
 )}
 {page === 2 && (
   <>
-    <FileUpload label="Vehicle CR/OR" required value={docs.crOr} onChange={(f) => onChange("crOr", f)} error={localErrors.crOr} />
+    <FileUpload label="Vehicle OR" required value={docs.or} onChange={(f) => onChange("or", f)} error={localErrors.or} />
+    <FileUpload label="Vehicle CR" required value={docs.cr} onChange={(f) => onChange("cr", f)} error={localErrors.cr} />
     <FileUpload label="Vehicle Backplate Photo" imageOnly required value={docs.backplate} onChange={(f) => onChange("backplate", f)} error={localErrors.backplate} />
   </>
 )}
@@ -207,7 +210,7 @@ const SignupPage = () => {
   const [role, setRole] = useState(null);
   const [step, setStep] = useState(0);
   const [data, setData] = useState({ firstName: "", lastName: "", username: "", phone: "", email: "", password: "", confirmPassword: "", terms: false });
-  const [docs, setDocs] = useState({ vehicleType: "", plateNumber: "", profilePhoto: null, license: null, crOr: null, backplate: null });
+  const [docs, setDocs] = useState({ vehicleType: "", plateNumber: "", profilePhoto: null, license: null, or: null, cr: null, backplate: null });
   const [errors, setErrors] = useState({});
   const [toast, setToast] = useState({ message: "", id: 0 });
   const update = (key, val) => setData((d) => ({ ...d, [key]: val }));
