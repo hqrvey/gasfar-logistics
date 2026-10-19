@@ -1,16 +1,16 @@
 import React, { useState } from "react";
 import { FiBriefcase, FiEdit2, FiHome, FiLock, FiMail, FiMapPin as FiMapPinOutline, FiPlus, FiTrash2, FiUser } from "react-icons/fi";
-import { MOCK_NOTIFICATIONS_USER, MOCK_SAVED_ADDRESSES } from "../../data/clientMockData.js";
-import { ClientLayout } from "../../layouts/ClientLayout.jsx";
-import { Field } from "../../components/client/booking/BookingUI.jsx";
-import { InputField, PhoneInput } from "../../components/client/common/FormComponents.jsx";
+import { MOCK_NOTIFICATIONS_USER, MOCK_SAVED_ADDRESSES } from "../../data/demo/clientMockData.js";
+import UserLayout from "../../layouts/UserLayout.jsx";
+import { Field } from "../../components/common/BookingUI.jsx";
+import { InputField, PhoneInput } from "../../components/common/FormComponents.jsx";
 import {
   AddressEditorModal,
   ChangePasswordTab,
   DeleteAccountTab,
   PhotoUploader,
   ProfileLayout,
-} from "../../components/client/profile/ProfileComponents.jsx";
+} from "../../components/common/ProfileComponents.jsx";
 
 const UserProfilePage = ({ savedAddresses = [], onSaveAddress, onUpdateAddress, onDeleteAddress }) => {
   const [activeTab, setActiveTab] = useState("profile");
@@ -43,7 +43,7 @@ const UserProfilePage = ({ savedAddresses = [], onSaveAddress, onUpdateAddress, 
   );
   const deleteAddress = (id) => { onDeleteAddress(id); setDeleteAddrId(null); };
   return (
-    <ClientLayout user={{ name: `${info.firstName} ${info.lastName}` }} notifications={MOCK_NOTIFICATIONS_USER}>
+    <UserLayout user={{ name: `${info.firstName} ${info.lastName}` }} notifications={MOCK_NOTIFICATIONS_USER}>
       <div className="profile-page-wrap">
         <ProfileLayout header={header} tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab}>
           {activeTab === "profile" && (
@@ -115,7 +115,7 @@ const UserProfilePage = ({ savedAddresses = [], onSaveAddress, onUpdateAddress, 
           }} />
         )}
       </div>
-    </ClientLayout>
+    </UserLayout>
   );
 };
 

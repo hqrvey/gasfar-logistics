@@ -12,8 +12,8 @@ import {
   PlainHeader,
   SignupSteps,
   Toast,
-} from "../../components/client/common/FormComponents.jsx";
-import VehicleSelect from "../../components/client/common/VehicleSelect.jsx";
+  VehicleSelect,
+} from "../../components/common/FormComponents.jsx";
 
 /* ═══ Signup ═══ */
 const RESEND_LIMIT = 5;

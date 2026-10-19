@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { FiLock, FiMail, FiPhone } from "react-icons/fi";
-import { InputField, OtpInput, PasswordStrength, StepIndicator } from "../../components/client/common/FormComponents.jsx";
+import { InputField, OtpInput, PasswordStrength, StepIndicator } from "../../components/common/FormComponents.jsx";
 import { isValidEmail } from "../../utils/helpers.js";
 import logo from "../../assets/logos/gaspar-logo2.png";
 import logomark from "../../assets/logos/gaspar-logomark.png";

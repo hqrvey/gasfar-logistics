@@ -4,10 +4,11 @@ import { FiPhone, FiX } from "react-icons/fi";
 import { ArrowLeft, ArrowRight, Check, Clock, MapPin, Navigation, Search, ShieldCheck, Star, TriangleAlert } from "lucide-react";
 import { useBookings } from "../../hooks/useBookings.js";
 import { bookingStore } from "../../services/bookingStore.js";
-import { MapPicker } from "../../components/client/map/MapComponents.jsx";
-import { AppHeader, ClientLayout } from "../../layouts/ClientLayout.jsx";
-import { EmptyState, Field } from "../../components/client/booking/BookingUI.jsx";
-import { MOCK_NOTIFICATIONS_USER } from "../../data/clientMockData.js";
+import { MapPicker } from "../../components/common/MapComponents.jsx";
+import AppHeader from "../../components/common/AppHeader.jsx";
+import UserLayout from "../../layouts/UserLayout.jsx";
+import { EmptyState, Field } from "../../components/common/BookingUI.jsx";
+import { MOCK_NOTIFICATIONS_USER } from "../../data/demo/clientMockData.js";
 
 /* ═══ Active Delivery (user) ═══ */
 const ACTIVE_STATUS_LABEL = {
@@ -193,31 +194,31 @@ const ActiveDeliveryPage = () => {
 
   if (orders.length === 0) {
     return (
-      <ClientLayout user={{ name: "Juan Dela Cruz" }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
+      <UserLayout user={{ name: "Juan Dela Cruz" }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
         <div className="active-empty">
           <EmptyState Icon={Navigation} title="No active deliveries" message="Book a delivery to see your rider's live location and ETA here." />
           <button className="btn-bd-next" type="button" onClick={() => navigate("/place-order")}>Book a Delivery <ArrowRight size={14} /></button>
         </div>
-      </ClientLayout>
+      </UserLayout>
     );
   }
 
   if (expandedOrder) {
     return (
-      <ClientLayout user={{ name: "Juan Dela Cruz" }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
+      <UserLayout user={{ name: "Juan Dela Cruz" }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
         {expandedOrder.status === "pending" ? (
           <PendingDeliveryTracking order={expandedOrder} onBack={() => setExpandedId(null)} onCancel={handleCancel} />
         ) : (
           <ActiveDeliveryTracking order={expandedOrder} onBack={() => setExpandedId(null)} onCancel={handleCancel} />
         )}
-      </ClientLayout>
+      </UserLayout>
     );
   }
 
   const previewOrder = visibleOrders.find((o) => o.id === hoverId) || visibleOrders[0] || null;
 
   return (
-    <ClientLayout user={{ name: "Juan Dela Cruz" }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
+    <UserLayout user={{ name: "Juan Dela Cruz" }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
       <div className="bd-shell">
         <div className="bd-panel">
           <div className="bd-inner">
@@ -245,7 +246,7 @@ const ActiveDeliveryPage = () => {
           {previewOrder ? (<MapPicker viewOnly pickupCoords={previewOrder.pickup} dropoffCoords={previewOrder.dropoff} driverCoords={previewOrder.driverLocation} />) : (<div className="bd-map__placeholder"><MapPin size={36} /><p>No route to preview</p></div>)}
         </div>
       </div>
-    </ClientLayout>
+    </UserLayout>
   );
 };
 

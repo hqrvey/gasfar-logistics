@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CalendarDays, Save } from "lucide-react";
-import { DetailModal, Modal, PageHeader } from "../../components/admin/ui/index.js";
-import DeliveryTable from "../../components/admin/DeliveryTable.jsx";
+import { DetailModal, Modal, PageHeader, DeliveryTable } from "../../components/admin/AdminUI.jsx";
 import usePersistedState from "../../hooks/usePersistedState.js";
-import { INITIAL_DELIVERIES } from "../../data/adminMockData.js";
-import { bookingDetailRows } from "../../utils/bookings.js";
+import { INITIAL_DELIVERIES } from "../../data/demo/adminMockData.js";
+import { bookingDetailRows } from "../../utils/helpers.js";
 import { STORAGE_KEYS } from "../../utils/storage.js";
 
 const FILTERS = ["All", "Ongoing", "In Transit", "Completed", "Cancelled"];

@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { PageHeader } from "../../components/admin/ui/index.js";
+import { PageHeader } from "../../components/admin/AdminUI.jsx";
 import { ROUTES } from "../../routes/paths.js";
 
 export default function NotFoundPage() {

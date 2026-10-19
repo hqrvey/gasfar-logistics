@@ -10,14 +10,39 @@ import {
   Users,
   XCircle,
 } from "lucide-react";
-import { DetailModal, PageHeader, Stat, StatusItem } from "../../components/admin/ui/index.js";
-import DeliveryTable from "../../components/admin/DeliveryTable.jsx";
-import DeliveryBarChart, { ChartLegend } from "../../components/admin/DeliveryBarChart.jsx";
-import { INITIAL_DELIVERIES } from "../../data/adminMockData.js";
+import {
+  DetailModal,
+  PageHeader,
+  Stat,
+  StatusItem,
+  DeliveryTable,
+  DeliveryBarChart,
+  ChartLegend,
+} from "../../components/admin/AdminUI.jsx";
+import { INITIAL_DELIVERIES } from "../../data/demo/adminMockData.js";
 import { REPORT_YEARS, DEFAULT_REPORT_YEAR } from "../../data/reportData.js";
 import { ROUTES } from "../../routes/paths.js";
-import { bookingDetailRows } from "../../utils/bookings.js";
-import { downloadCSV } from "../../utils/csv.js";
+import { bookingDetailRows } from "../../utils/helpers.js";
+
+// CSV export for this dashboard only.
+// Quote every cell so values with commas (e.g. "Today, 7:30 PM") don't break columns.
+const escapeCell = (value) => `"${String(value).replaceAll('"', '""')}"`;
+
+function downloadCSV(filename, headers, rows) {
+  const csv = [headers, ...rows]
+    .map((row) => row.map(escapeCell).join(","))
+    .join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+
+  URL.revokeObjectURL(url);
+}
 
 export default function DashboardPage() {
   const navigate = useNavigate();

@@ -1,14 +1,13 @@
 import React, { useState } from "react";
 import { FiEdit2, FiLock, FiMail, FiPhone, FiTrash2, FiTruck, FiUser, FiX } from "react-icons/fi";
 import { BadgeCheck, Bike, Car, CarFront, ShieldCheck, Star, TrendingUp, Truck, Van } from "lucide-react";
-import { InputField, PhoneInput, FileUpload } from "../../components/client/common/FormComponents.jsx";
-import VehicleSelect from "../../components/client/common/VehicleSelect.jsx";
-import { ProfileLayout, PhotoUploader, ChangePasswordTab, DeleteAccountTab } from "../../components/client/profile/ProfileComponents.jsx";
-import { AppHeader } from "../../layouts/ClientLayout.jsx";
+import { InputField, PhoneInput, FileUpload, VehicleSelect } from "../../components/common/FormComponents.jsx";
+import { ProfileLayout, PhotoUploader, ChangePasswordTab, DeleteAccountTab } from "../../components/common/ProfileComponents.jsx";
+import AppHeader from "../../components/common/AppHeader.jsx";
 import { useBookings } from "../../hooks/useBookings.js";
 import { useReviews } from "../../hooks/useReviews.js";
-import { MOCK_DRIVER, MOCK_DRIVER_REVIEWS, MOCK_NOTIFICATIONS_DRIVER } from "../../data/clientMockData.js";
-import { SqCard, Field } from "../../components/client/booking/BookingUI.jsx";
+import { MOCK_DRIVER, MOCK_DRIVER_REVIEWS, MOCK_NOTIFICATIONS_DRIVER } from "../../data/demo/clientMockData.js";
+import { SqCard, Field } from "../../components/common/BookingUI.jsx";
 import { peso } from "../../utils/helpers.js";
 
 const VEHICLES = [
@@ -19,15 +18,32 @@ const VEHICLES = [
   { id: "l300", label: "L300", sub: "Up to 1,000 kg", Icon: Van },
 ];
 
+/* Random reviewer names (used when a review has no name) */
+const RANDOM_NAMES = [
+  "Maria Reyes", "Juan Dela Cruz", "Angela Santos", "Mark Villanueva",
+  "Katrina Bautista", "Joseph Mendoza", "Patricia Garcia", "Daniel Ramos",
+  "Jasmine Cruz", "Miguel Torres", "Bianca Aquino", "Carlo Navarro",
+  "Rhea Castillo", "Paolo Fernandez", "Liza Domingo", "Kevin Soriano",
+];
+
+/* Stable "random" pick — same seed always gives the same name */
+const pickName = (seed = "") => {
+  let hash = 0;
+  const str = String(seed);
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) | 0;
+  }
+  return RANDOM_NAMES[Math.abs(hash) % RANDOM_NAMES.length];
+};
+
 /* ═══ Driver Profile ═══ */
 const ChangeVehicleModal = ({ current, onClose, onSubmit }) => {
   const [type, setType] = useState(current.type);
   const [plate, setPlate] = useState(current.plate || "");
-  const [platePhoto, setPlatePhoto] = useState(null);
   const [or, setOr] = useState(null);
   const [cr, setCr] = useState(null);
   const [backplate, setBackplate] = useState(null);
-  const valid = plate.trim() && platePhoto && or && cr && backplate;
+  const valid = plate.trim() && or && cr && backplate;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -56,10 +72,9 @@ const ChangeVehicleModal = ({ current, onClose, onSubmit }) => {
               value={plate}
               onChange={(e) => setPlate(e.target.value.toUpperCase().slice(0, 12))}
             />
-            <FileUpload label="Plate Number Photo" imageOnly required value={platePhoto} onChange={setPlatePhoto} />
             <FileUpload label="Vehicle OR" required value={or} onChange={setOr} />
             <FileUpload label="Vehicle CR" required value={cr} onChange={setCr} />
-            <FileUpload label="Vehicle Backplate Photo" imageOnly required value={backplate} onChange={setBackplate} />
+            <FileUpload label="Backplate Photo" imageOnly required value={backplate} onChange={setBackplate} />
             <div className="modal-notice">
               <ShieldCheck size={14} />
               <span>Changing vehicle requires admin re-verification. You'll be offline until approved (usually 1–2 days).</span>
@@ -82,7 +97,7 @@ const ChangeVehicleModal = ({ current, onClose, onSubmit }) => {
   );
 };
 
-const DriverStatsTab = ({ myReviews, avgRating, completedTrips, baseTrips }) => {
+const DriverStatsTab = ({ myReviews, avgRating }) => {
   const totalReviews = myReviews.length;
   const allReviews = [...MOCK_DRIVER_REVIEWS, ...myReviews];
 
@@ -92,7 +107,6 @@ const DriverStatsTab = ({ myReviews, avgRating, completedTrips, baseTrips }) => 
   }));
   const maxCount = Math.max(...dist.map((d) => d.count), 1);
 
-  const totalTrips = completedTrips + (baseTrips || 0);
   const recent = allReviews.slice(-4).reverse();
 
   return (
@@ -128,37 +142,15 @@ const DriverStatsTab = ({ myReviews, avgRating, completedTrips, baseTrips }) => 
         </div>
       </div>
 
-      {/* Quick metrics */}
-      <div className="driver-stats__grid">
-        <div className="driver-stats__metric">
-          <div className="driver-stats__metric-icon"><Truck size={18} /></div>
-          <div>
-            <p className="driver-stats__metric-val">{totalTrips}</p>
-            <p className="driver-stats__metric-label">Completed trips</p>
-          </div>
-        </div>
-        <div className="driver-stats__metric">
-          <div className="driver-stats__metric-icon"><BadgeCheck size={18} /></div>
-          <div>
-            <p className="driver-stats__metric-val">98%</p>
-            <p className="driver-stats__metric-label">On-time rate</p>
-          </div>
-        </div>
-        <div className="driver-stats__metric">
-          <div className="driver-stats__metric-icon"><TrendingUp size={18} /></div>
-          <div>
-            <p className="driver-stats__metric-val">95%</p>
-            <p className="driver-stats__metric-label">Acceptance rate</p>
-          </div>
-        </div>
-      </div>
-
       {/* Recent reviews */}
       {recent.length > 0 ? (
         <div className="driver-stats__reviews">
           <p className="driver-stats__reviews-title">Recent reviews</p>
           {recent.map((r, i) => (
             <div key={i} className="driver-stats__review">
+              <p className="driver-stats__review-name">
+                {r.name || r.reviewer || r.userName || r.customerName || pickName(`${r.date}${r.comment}${r.rating}`)}
+              </p>
               <div className="driver-stats__review-stars">
                 {[1, 2, 3, 4, 5].map((n) => (
                   <Star key={n} size={12}
@@ -190,7 +182,7 @@ const DriverProfilePage = () => {
   const [vehicle, setVehicle] = useState(MOCK_DRIVER.vehicle);
   const [showVehicleChange, setShowVehicleChange] = useState(false);
 
-    const { bookings } = useBookings();
+  const { bookings } = useBookings();
   const { reviews } = useReviews();
 
   /* Real reviews mula sa users (localStorage) */
@@ -199,7 +191,18 @@ const DriverProfilePage = () => {
       const b = bookings.find((x) => x.id === orderId);
       return b?.driver?.name === MOCK_DRIVER.name;
     })
-    .map(([, r]) => r);
+    .map(([orderId, r]) => {
+      const b = bookings.find((x) => x.id === orderId);
+      return {
+        ...r,
+        name:
+          r.name ||
+          b?.customer?.name ||
+          b?.customerName ||
+          b?.user?.name ||
+          pickName(orderId),
+      };
+    });
 
   const completedTrips = bookings.filter(
     (b) => b.driver?.name === MOCK_DRIVER.name && ["delivered", "completed"].includes(b.status)
@@ -215,13 +218,13 @@ const DriverProfilePage = () => {
   const cancelEdit = () => { setDraft(info); setEditing(false); };
   const saveEdit = () => { setInfo(draft); setEditing(false); alert("Profile updated! (mock)"); };
   const updatePhoto = (file) => setInfo((s) => ({ ...s, photo: file }));
-const tabs = [
-  { id: "profile", label: "Profile Info", Icon: FiUser },
-  { id: "stats", label: "Stats", Icon: TrendingUp },
-  { id: "vehicle", label: "Vehicle", Icon: FiTruck },
-  { id: "password", label: "Change Password", Icon: FiLock },
-  { id: "delete", label: "Delete Account", Icon: FiTrash2 },
-];
+  const tabs = [
+    { id: "profile", label: "Profile Info", Icon: FiUser },
+    { id: "stats", label: "Reviews", Icon: TrendingUp },
+    { id: "vehicle", label: "Vehicle", Icon: FiTruck },
+    { id: "password", label: "Change Password", Icon: FiLock },
+    { id: "delete", label: "Delete Account", Icon: FiTrash2 },
+  ];
   const header = (
     <>
       <div className="profile-avatar profile-avatar--driver">{info.photo ? <img src={URL.createObjectURL(info.photo)} alt={info.firstName} /> : <span>{info.firstName.charAt(0)}{info.lastName.charAt(0)}</span>}</div>
@@ -229,10 +232,10 @@ const tabs = [
         <h2 className="profile-header-name">{info.firstName} {info.lastName}{MOCK_DRIVER.verified && <span className="profile-verified" title="Verified"><BadgeCheck size={16} /></span>}</h2>
         <p className="profile-header-meta">@{info.username} · {VEHICLES.find(v => v.id === vehicle.type)?.label || "Motorcycle"}</p>
         <div className="profile-rating">
-  <Star size={14} fill="#F47B20" color="#F47B20" />
-  <span className="profile-rating__val">{avgRating.toFixed(1)}</span>
-  <span className="profile-rating__sub">· {MOCK_DRIVER.trips + completedTrips} trips</span>
-</div>
+          <Star size={14} fill="#F47B20" color="#F47B20" />
+          <span className="profile-rating__val">{avgRating.toFixed(1)}</span>
+          <span className="profile-rating__sub">· {MOCK_DRIVER.trips + completedTrips} trips</span>
+        </div>
       </div>
     </>
   );
@@ -257,22 +260,20 @@ const tabs = [
               </div>
             )}
             {activeTab === "stats" && (
-  <DriverStatsTab
-    myReviews={myReviews}
-    avgRating={avgRating}
-    completedTrips={completedTrips}
-    baseTrips={MOCK_DRIVER.trips}
-  />
-)}
+              <DriverStatsTab
+                myReviews={myReviews}
+                avgRating={avgRating}
+              />
+            )}
             {activeTab === "vehicle" && (
               <div className="profile-form">
                 <div className="vehicle-card">
                   <div className="vehicle-card__icon">{React.createElement(VEHICLES.find(v => v.id === vehicle.type)?.Icon || Bike, { size: 26 })}</div>
-                 <div className="vehicle-card__body">
-  <p className="vehicle-card__type">{VEHICLES.find(v => v.id === vehicle.type)?.label || "Motorcycle"}</p>
-  <p className="vehicle-card__cap">Max capacity: {vehicle.capacity}</p>
-</div>
-                 <span className="vehicle-card__status vehicle-card__status--active">Active</span>
+                  <div className="vehicle-card__body">
+                    <p className="vehicle-card__type">{VEHICLES.find(v => v.id === vehicle.type)?.label || "Motorcycle"}</p>
+                    <p className="vehicle-card__cap">Max capacity: {vehicle.capacity}</p>
+                  </div>
+                  <span className="vehicle-card__status vehicle-card__status--active">Active</span>
                 </div>
                 <button className="btn-profile-secondary" onClick={() => setShowVehicleChange(true)}><FiEdit2 size={14} /> Change Vehicle</button>
               </div>

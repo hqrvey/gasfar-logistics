@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { FiEye, FiEyeOff, FiFile, FiLock, FiUpload, FiX, FiUser } from "react-icons/fi";
-import { Check } from "lucide-react";
+import { FiChevronDown, FiEye, FiEyeOff, FiFile, FiLock, FiTruck, FiUpload, FiX, FiUser } from "react-icons/fi";
+import { Bike, Car, CarFront, Check, Truck, Van } from "lucide-react";
 
 /* ═══ InputField ═══ */
 const InputField = ({ label, type = "text", placeholder = "", icon: Icon, id, value, onChange, error = "", disabled = false }) => {
@@ -205,6 +205,115 @@ const PlainHeader = ({ title, subtitle }) => (
   </div>
 );
 
+// Vehicle selection is used in signup, driver profile, and booking forms.
+const SIGNUP_VEHICLE_TYPES = [
+  { value: "motorcycle", label: "Motorcycle (max 20 kg)" },
+  { value: "sedan", label: "Sedan (max 200 kg)" },
+  { value: "suv", label: "SUV (max 600 kg)" },
+  { value: "pickup", label: "Pickup (max 800 kg)" },
+  { value: "l300", label: "L300 (max 1,000 kg)" },
+];
+const VEHICLE_ICONS = { motorcycle: Bike, sedan: Car, suv: CarFront, pickup: Truck, l300: Van };
+const SIGNUP_VEHICLE_OPTIONS = SIGNUP_VEHICLE_TYPES.map((v) => ({
+  value: v.value,
+  label: v.label.split(" (")[0],
+  sub: "Max " + (v.label.match(/\((.+)\)/)?.[1] || ""),
+  Icon: VEHICLE_ICONS[v.value] || FiTruck,
+}));
+
+function VehicleSelect({
+  value,
+  onChange,
+  error = "",
+  options = SIGNUP_VEHICLE_OPTIONS,
+  label = "Vehicle Type",
+  placeholder = "Select an option",
+  placeholderIcon: PlaceholderIcon = Car,
+}) {
+  const [open, setOpen] = useState(false);
+  const availableOptions = options || SIGNUP_VEHICLE_OPTIONS;
+  const selected = availableOptions.find((option) => option.value === value);
+  const SelectedIcon = selected?.Icon || PlaceholderIcon;
+  const isPlaceholder = !selected;
+
+  function chooseVehicle(vehicleType) {
+    onChange(vehicleType);
+    setOpen(false);
+  }
+
+  return (
+    <div className="vehicle-select">
+      <label className="input-label">
+        {label} <span className="required">*</span>
+      </label>
+      <button
+        type="button"
+        className={
+          `vehicle-select__trigger` +
+          (error ? " vehicle-select__trigger--error" : "") +
+          (open ? " vehicle-select__trigger--open" : "") +
+          (isPlaceholder ? " vehicle-select__trigger--placeholder" : "")
+        }
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span
+          className="vehicle-select__icon"
+          style={isPlaceholder ? { color: "#9ca3af", background: "#f3f4f6" } : undefined}
+        >
+          <SelectedIcon size={20} strokeWidth={isPlaceholder ? 2.2 : 1.8} />
+        </span>
+        <span className="vehicle-select__body">
+          {selected ? (
+            <>
+              <span className="vehicle-select__label">{selected.label}</span>
+              <span className="vehicle-select__sub">{selected.sub}</span>
+            </>
+          ) : (
+            <span
+              className="vehicle-select__placeholder"
+              style={{ color: "#9ca3af", fontWeight: 500 }}
+            >
+              {placeholder}
+            </span>
+          )}
+        </span>
+        <FiChevronDown
+          size={16}
+          className={`vehicle-select__caret${open ? " open" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <>
+          <div className="vehicle-select__backdrop" onClick={() => setOpen(false)} />
+          <div className="vehicle-select__dropdown">
+            {availableOptions.map((option) => {
+              const Icon = option.Icon || FiTruck;
+              const isSelected = option.value === value;
+
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`vehicle-select__option${isSelected ? " active" : ""}`}
+                  onClick={() => chooseVehicle(option.value)}
+                >
+                  <span className="vehicle-select__option-icon"><Icon size={16} /></span>
+                  <span className="vehicle-select__option-body">
+                    <span className="vehicle-select__option-name">{option.label}</span>
+                    <span className="vehicle-select__option-cap">{option.sub}</span>
+                  </span>
+                  {isSelected && <Check size={14} className="vehicle-select__option-check" />}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export {
   InputField,
   PhoneInput,
@@ -216,4 +325,5 @@ export {
   StepIndicator,
   Toast,
   PlainHeader,
+  VehicleSelect,
 };

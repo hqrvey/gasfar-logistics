@@ -4,23 +4,13 @@ import { ArrowLeft, Check, Navigation, Package, ShieldCheck, TriangleAlert, Truc
 import { useBookings } from "../../hooks/useBookings.js";
 import { bookingStore } from "../../services/bookingStore.js";
 import { DRIVER_ACTION, DRIVER_FLOW, peso } from "../../utils/helpers.js";
-import { MOCK_DRIVER, MOCK_NOTIFICATIONS_DRIVER } from "../../data/clientMockData.js";
-import { AppHeader } from "../../layouts/ClientLayout.jsx";
-import { Field, EmptyState } from "../../components/client/booking/BookingUI.jsx";
-import { MapPicker } from "../../components/client/map/MapComponents.jsx";
-import { RouteStrip } from "../../components/client/review/ReviewComponents.jsx";
+import { MOCK_DRIVER, MOCK_NOTIFICATIONS_DRIVER } from "../../data/demo/clientMockData.js";
+import AppHeader from "../../components/common/AppHeader.jsx";
+import { Field, EmptyState, RouteStrip } from "../../components/common/BookingUI.jsx";
+import { MapPicker } from "../../components/common/MapComponents.jsx";
 
-/* ═══ Driver Home ═══ */
-const BookingCard = ({ booking, onExpand }) => (
-  <button type="button" className="order-card driver-booking-card" onClick={() => onExpand(booking)}>
-    <div className="order-card__top">
-      <span className={`delivery-type-badge ${booking.deliveryType}`}>{booking.deliveryType === "priority" ? <Zap size={12} /> : <Truck size={12} />}<span>{booking.deliveryType === "priority" ? "Priority" : "Regular"}</span></span>
-      <span className="order-card__id">{booking.id}</span>
-    </div>
-    <RouteStrip pickup={booking.pickup} dropoff={booking.dropoff} labels={false} />
-    <div className="order-card__footer"><div className="order-card__customer"><span className="order-card__items">{booking.customerName}</span></div><span className="order-card__price">{booking.price}</span></div>
-  </button>
-);
+// These dialogs are only used on this page, so they stay here.
+// Demo-only delivery PIN; real verification must happen on the backend.
 const MOCK_DELIVERY_PIN = "1234";
 const DeliveryPinModal = ({ booking, onConfirm, onClose }) => {
   const [pin, setPin] = useState("");
@@ -71,6 +61,18 @@ const CancelDeliveryModal = ({ booking, onConfirm, onClose }) => {
     </div>
   );
 };
+
+/* ═══ Driver Home ═══ */
+const BookingCard = ({ booking, onExpand }) => (
+  <button type="button" className="order-card driver-booking-card" onClick={() => onExpand(booking)}>
+    <div className="order-card__top">
+      <span className={`delivery-type-badge ${booking.deliveryType}`}>{booking.deliveryType === "priority" ? <Zap size={12} /> : <Truck size={12} />}<span>{booking.deliveryType === "priority" ? "Priority" : "Regular"}</span></span>
+      <span className="order-card__id">{booking.id}</span>
+    </div>
+    <RouteStrip pickup={booking.pickup} dropoff={booking.dropoff} labels={false} />
+    <div className="order-card__footer"><div className="order-card__customer"><span className="order-card__items">{booking.customerName}</span></div><span className="order-card__price">{booking.price}</span></div>
+  </button>
+);
 const BookingExpand = ({ booking, onClose, onStatusChange }) => {
   const [showPinModal, setShowPinModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);

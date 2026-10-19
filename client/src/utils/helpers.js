@@ -26,3 +26,13 @@ export const DRIVER_ACTION = {
   picked_up: "Mark as Arrived",
   arrived: "Confirm Delivery (Enter PIN)",
 };
+
+// Used by the admin dashboard and deliveries page.
+export const bookingDetailRows = ([id, user, driver, route, status, eta]) => [
+  ["Booking ID", id],
+  ["User", user],
+  ["Driver", driver],
+  ["Route", route],
+  ["Status", status],
+  ["ETA", eta],
+];

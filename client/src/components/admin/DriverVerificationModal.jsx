@@ -10,7 +10,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { DRIVER_DOCS } from "../../../data/adminMockData.js";
+import { DRIVER_DOCS } from "../../data/demo/adminMockData.js";
 
 const DOC_GROUPS = [
   {

@@ -2493,3 +2493,9 @@ width: 100%;
   background-color: #fef2f2;
   color: #991b1b;
 }
+.driver-stats__review-name {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f1c3f;
+}

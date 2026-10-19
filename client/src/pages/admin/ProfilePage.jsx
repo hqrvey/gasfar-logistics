@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CheckCircle2, Save, Trash2, Upload } from "lucide-react";
-import { PageHeader } from "../../components/admin/ui/index.js";
+import { PageHeader } from "../../components/admin/AdminUI.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024;

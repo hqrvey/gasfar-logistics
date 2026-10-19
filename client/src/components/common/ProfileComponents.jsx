@@ -1,9 +1,9 @@
 import React, { useRef, useState } from "react";
 import { FiArrowRight, FiBriefcase, FiCamera, FiChevronDown, FiEye, FiEyeOff, FiHome, FiLock, FiMail, FiMapPin as FiMapPinOutline, FiPhone, FiTrash2, FiUpload, FiUser, FiX } from "react-icons/fi";
 import { Check, MapPin, ShieldCheck, TriangleAlert } from "lucide-react";
-import { InputField, FileUpload, PasswordStrength, PhoneInput } from "../common/FormComponents.jsx";
-import { MapPicker, MapSearchBar } from "../map/MapComponents.jsx";
-import { SqCard, Field } from "../booking/BookingUI.jsx";
+import { InputField, FileUpload, PasswordStrength, PhoneInput } from "./FormComponents.jsx";
+import { MapPicker, MapSearchBar } from "./MapComponents.jsx";
+import { SqCard, Field } from "./BookingUI.jsx";
 
 /* ═══ Profile shell ═══ */
 const ProfileLayout = ({ header, tabs, activeTab, onTabChange, children }) => (

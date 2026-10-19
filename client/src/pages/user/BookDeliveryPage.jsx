@@ -1,18 +1,20 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiArrowLeft, FiCheck, FiClock, FiMapPin, FiPlus, FiX, FiMaximize2, FiMinimize2, FiUpload } from "react-icons/fi";
 import { ArrowLeft, ArrowRight, Bike, Car, CarFront, CalendarDays, Check, CircleDollarSign, Clock, CreditCard, FileText, Hand, MapPin, Navigation, Package, Pill, Search, Shirt, Thermometer, TriangleAlert, Truck, Utensils, Van, Armchair, BookOpen, Cog, User, UserRound, ArrowUp, Droplets, Layers, Monitor, ShieldCheck, Zap } from "lucide-react";
 import { peso } from "../../utils/helpers.js";
 import { bookingStore } from "../../services/bookingStore.js";
-import { MapPicker, MapModeSwitcher, MapSearchBar, MapZoomControls } from "../../components/client/map/MapComponents.jsx";
-import { SqCard, LocCard, Field, RR, EmptyState, ReviewGroup } from "../../components/client/booking/BookingUI.jsx";
-import { ClientLayout } from "../../layouts/ClientLayout.jsx";
-import { LocationChooserModal } from "../../components/client/profile/ProfileComponents.jsx";
-import VehicleSelect from "../../components/client/common/VehicleSelect.jsx";
-import { FileUpload } from "../../components/client/common/FormComponents.jsx";
-import { MOCK_NOTIFICATIONS_USER } from "../../data/clientMockData.js";
+import { MapPicker, MapModeSwitcher, MapSearchBar, MapZoomControls } from "../../components/common/MapComponents.jsx";
+import { SqCard, LocCard, Field, RR, EmptyState, ReviewGroup } from "../../components/common/BookingUI.jsx";
+import UserLayout from "../../layouts/UserLayout.jsx";
+import { LocationChooserModal } from "../../components/common/ProfileComponents.jsx";
+import { FileUpload, VehicleSelect } from "../../components/common/FormComponents.jsx";
+import { MOCK_NOTIFICATIONS_USER } from "../../data/demo/clientMockData.js";
 
-/* ═══ Book Delivery constants ═══ */
+// All choices for this booking form are defined here, next to the page.
+// Options shown in the multi-step booking form.
+// Choices for this form. These are only used by BookDeliveryPage.
+
 const STEPS = ["Locations", "Schedule", "Recipient", "Package", "Payment", "Review"];
 const VEHICLES = [
   { id: "motorcycle", label: "Motorcycle", sub: "Up to 20 kg", Icon: Bike },
@@ -51,28 +53,27 @@ const BOOKING_INITIAL = {
    scheduleType: "now", scheduleDate: "", scheduleTime: "", vehicleType: "", deliveryType: "", itemTypes: [], quantity: 1, itemWeight: "",
   handlingInstructions: [], notesToDriver: "", itemPhoto: null, paymentMethod: "cash", paymentSide: "sender",
 };
-
 /* ═══ BookDeliveryPage ═══ */
 const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
-  const [step, setStep] = React.useState(1);
-  const [form, setForm] = React.useState(BOOKING_INITIAL);
-  const [routeInfo, setRouteInfo] = React.useState(null);
-  const [mapMode, setMapMode] = React.useState("pickup");
-  const [mapExpanded, setMapExpanded] = React.useState(false);
-  const [showSuccess, setShowSuccess] = React.useState(false);
-  const [confirmedId, setConfirmedId] = React.useState("");
-  const [showSavedPicker, setShowSavedPicker] = React.useState(null);
-  const mapRef = React.useRef(null);
+  const [step, setStep] = useState(1);
+  const [form, setForm] = useState(BOOKING_INITIAL);
+  const [routeInfo, setRouteInfo] = useState(null);
+  const [mapMode, setMapMode] = useState("pickup");
+  const [mapExpanded, setMapExpanded] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [confirmedId, setConfirmedId] = useState("");
+  const [showSavedPicker, setShowSavedPicker] = useState(null);
+  const mapRef = useRef(null);
   const navigate = useNavigate();
 
-  React.useEffect(() => {
-    let raf1 = requestAnimationFrame(() => {
-      let raf2 = requestAnimationFrame(() => {
-        mapRef.current?.getMap()?.invalidateSize();
-      });
-      return () => cancelAnimationFrame(raf2);
+  // Google Maps is not Leaflet: do not call invalidateSize().
+  // Trigger a map resize when the map panel expands or collapses.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const map = mapRef.current?.getMap();
+      if (map) window.google?.maps?.event?.trigger?.(map, "resize");
     });
-    return () => cancelAnimationFrame(raf1);
+    return () => cancelAnimationFrame(frame);
   }, [mapExpanded]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -89,9 +90,9 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
   const selItems = ITEM_TYPES.filter(i => form.itemTypes.includes(i.id));
   const selHandling = HANDLING.filter(i => form.handlingInstructions.includes(i.id));
 
-  // ⬇⬇ STORE WIRING: nagsusulat na sa shared store imbes na mock lang
+  // Save locally for now. Replace bookingStore with the booking API later.
   const handleConfirm = () => {
-    const id = `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
+    const id = `ORD-${Date.now()}`;
     bookingStore.create({
       id,
       status: "pending",
@@ -101,6 +102,18 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
       itemDetails: `${selItems.map(i => i.label).join(", ")} · Qty: ${form.quantity}`,
       handlingInstructions: form.handlingInstructions,
       notesToDriver: form.notesToDriver,
+      recipientName: form.recipientName,
+      recipientPhone: form.recipientPhone,
+      recipientUnit: form.recipientUnit,
+      scheduleType: form.scheduleType,
+      scheduleDate: form.scheduleDate,
+      scheduleTime: form.scheduleTime,
+      itemTypes: form.itemTypes,
+      itemWeight: form.itemWeight,
+      quantity: form.quantity,
+      paymentSide: form.paymentSide,
+      // Files cannot be stored directly as JSON in localStorage.
+      // When you build Express file uploads, send itemPhoto separately.
       price: peso(estimatedFee ?? 0),
       paymentMethod: form.paymentMethod.charAt(0).toUpperCase() + form.paymentMethod.slice(1),
       customerName: "Juan Dela Cruz",
@@ -130,7 +143,7 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
   ];
 
   return (
-    <ClientLayout hideFooter user={{ name: "Juan Dela Cruz" }} notifications={MOCK_NOTIFICATIONS_USER}>
+    <UserLayout hideFooter user={{ name: "Juan Dela Cruz" }} notifications={MOCK_NOTIFICATIONS_USER}>
       <div className="bd-shell">
         <div className={`bd-panel${!isLocStep ? " bd-panel--wide" : ""}`}>
           <div className={`bd-inner${!isLocStep ? " bd-inner--wide" : ""}`}>
@@ -306,7 +319,7 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
           </div>
         )}
       </div>
-    </ClientLayout>
+    </UserLayout>
   );
 };
 

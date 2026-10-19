@@ -1,5 +1,5 @@
 import { Save } from "lucide-react";
-import { PageHeader } from "../../components/admin/ui/index.js";
+import { PageHeader } from "../../components/admin/AdminUI.jsx";
 import usePersistedState from "../../hooks/usePersistedState.js";
 import { STORAGE_KEYS } from "../../utils/storage.js";
 

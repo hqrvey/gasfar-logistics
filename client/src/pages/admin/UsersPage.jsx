@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Eye } from "lucide-react";
-import { Badge, DetailModal, PageHeader } from "../../components/admin/ui/index.js";
+import { Badge, DetailModal, PageHeader } from "../../components/admin/AdminUI.jsx";
 import usePersistedState from "../../hooks/usePersistedState.js";
-import { INITIAL_USERS } from "../../data/adminMockData.js";
+import { INITIAL_USERS } from "../../data/demo/adminMockData.js";
 import { STORAGE_KEYS } from "../../utils/storage.js";
 
 export default function UsersPage() {

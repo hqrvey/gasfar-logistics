@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
+import { DEMO_USERS } from "../../data/demo/demoAccounts.js";
+import { HOME_BY_ROLE } from "../../routes/paths.js";
 import { FiClock, FiLock, FiMail, FiPackage, FiPhone, FiTruck, FiUser } from "react-icons/fi";
 import { MdOutlineVerifiedUser } from "react-icons/md";
 import { LuPackageSearch } from "react-icons/lu";
-import { InputField, Toast } from "../../components/client/common/FormComponents.jsx";
+import { InputField, Toast } from "../../components/common/FormComponents.jsx";
 import logo from "../../assets/logos/gaspar-logo2.png";
 import logomark from "../../assets/logos/gaspar-logomark.png";
 
@@ -21,15 +23,7 @@ const TAB_CONFIG = {
   email: { id: "email", label: "Email", placeholder: "Enter your email", icon: FiMail, type: "email" },
 };
 const MAX_ATTEMPTS = 3;
-const MOCK_USERS = [
-  { identifier: "admin", password: "admin123", role: "admin" },
-  { identifier: "admin@gasfar.com", password: "admin123", role: "admin" },
-  { identifier: "user", password: "user123", role: "user" },
-  { identifier: "0917 123 4567", password: "user123", role: "user" },
-  { identifier: "user@test.com", password: "user123", role: "user" },
-  { identifier: "driver", password: "driver123", role: "driver" },
-  { identifier: "0918 000 0000", password: "driver123", role: "driver" },
-];
+
 const LoginForm = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -48,13 +42,16 @@ const LoginForm = () => {
     e.preventDefault();
     if (locked) return;
     if (!identifier || !password) { showToast("Please fill in all fields."); return; }
-    const found = MOCK_USERS.find((u) => u.identifier === identifier.trim() && u.password === password);
+    const found = DEMO_USERS.find((u) => u.identifier === identifier.trim() && u.password === password);
     if (found) {
-      if (found.role === "admin") {
-        login(found.role);
-        navigate(location.state?.from?.pathname || "/admin/dashboard", { replace: true });
-      } else if (found.role === "driver") navigate("/driver/home");
-      else navigate("/place-order");
+      login(found.role);
+      // Return to the requested page only if it belongs to this role.
+      const requestedPage = location.state?.from?.pathname;
+      const belongsToRole =
+        (found.role === "admin" && requestedPage?.startsWith("/admin")) ||
+        (found.role === "driver" && requestedPage?.startsWith("/driver")) ||
+        (found.role === "user" && requestedPage && !requestedPage.startsWith("/admin") && !requestedPage.startsWith("/driver"));
+      navigate(belongsToRole ? requestedPage : HOME_BY_ROLE[found.role], { replace: true });
       return;
     }
     const newAttempts = attempts + 1;
