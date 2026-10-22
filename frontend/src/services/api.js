@@ -1,27 +1,24 @@
-/**
- * REST API entry point for the MERN version of GASFAR.
- *
- * The current prototype still uses localStorage stores for bookings and reviews.
- * When the Express backend is ready, feature services can use apiRequest()
- * instead of putting fetch() calls inside page components.
- */
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+// Shared REST helper for React -> Express. The browser sends the secure session
+// cookie automatically. Never store passwords or authentication tokens here.
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5001/api";
 
 export async function apiRequest(endpoint, options = {}) {
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(`${API_URL}${endpoint}`, {
+    ...options,
+    credentials: "include",
     headers: {
-      "Content-Type": "application/json",
+      ...(!isFormData ? { "Content-Type": "application/json" } : {}),
       ...(options.headers || {}),
     },
-    ...options,
   });
 
+  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = await response.text().catch(() => "");
-    throw new Error(message || `API request failed: ${response.status}`);
+    const error = new Error(data.message || `Request failed (${response.status}).`);
+    error.code = data.code;
+    error.status = response.status;
+    throw error;
   }
-
-  const contentType = response.headers.get("content-type") || "";
-  return contentType.includes("application/json") ? response.json() : response.text();
+  return data;
 }

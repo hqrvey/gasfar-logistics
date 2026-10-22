@@ -79,12 +79,9 @@ const UserProfilePage = ({ savedAddresses = [], onSaveAddress, onUpdateAddress, 
           {activeTab === "password" && <ChangePasswordTab />}
           {activeTab === "delete" && (
             <DeleteAccountTab
-              role="user"
+              role="customer"
               onDelete={() => {
-                localStorage.removeItem("gasfar_bookings_v1");
-                localStorage.removeItem("gasfar_reviews_v1");
-                alert("Your account has been deleted. Redirecting to login…");
-                window.location.href = "/login";
+                alert("Account deletion is not yet available through the REST API. Please contact support.");
               }}
             />
           )}

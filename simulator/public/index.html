@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GASFAR GPS Simulator · Development Tool</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brandicon">⌖</span><span>GASFAR <strong>GPS Simulator</strong></span></div>
+    <span class="devtag">LOCAL DEV TOOL — NOT FOR PRODUCTION</span>
+  </header>
+  <main class="shell">
+    <section class="intro">
+      <div>
+        <div class="eyebrow">TEST A REAL DELIVERY FLOW</div>
+        <h1>Drive the route. Test the app.</h1>
+        <p>Calculate the same Geoapify roads as GASFAR, then replay GPS through a separate logged-in driver browser. Customer tracking reads updates from your existing REST API.</p>
+      </div>
+    </section>
+    <div class="layout">
+      <section class="panel settings">
+        <div class="panelhead"><span class="sectioncount">01</span><h2>Route & coordinates</h2></div>
+        <p class="helper">Copy the coordinates from your test booking. Start is the driver's simulated initial GPS position.</p>
+        <form id="routeForm">
+          <fieldset><legend><span class="dot driver"></span>Driver starting point</legend>
+            <div class="pair"><label>Latitude<input id="startLat" type="number" step="any" placeholder="14.843300" required /></label><label>Longitude<input id="startLng" type="number" step="any" placeholder="120.810700" required /></label></div>
+          </fieldset>
+          <fieldset><legend><span class="dot pickup"></span>Pickup location</legend>
+            <div class="pair"><label>Latitude<input id="pickupLat" type="number" step="any" placeholder="14.840000" required /></label><label>Longitude<input id="pickupLng" type="number" step="any" placeholder="120.820000" required /></label></div>
+          </fieldset>
+          <fieldset><legend><span class="dot dropoff"></span>Drop-off location</legend>
+            <div class="pair"><label>Latitude<input id="dropoffLat" type="number" step="any" placeholder="14.830000" required /></label><label>Longitude<input id="dropoffLng" type="number" step="any" placeholder="120.790000" required /></label></div>
+          </fieldset>
+          <div class="formrow"><button id="example" type="button" class="linkbutton">Use example coordinates</button><span>Sample points near Malolos</span></div>
+          <button class="button primary full" type="submit" id="calculate">Calculate road routes <span>→</span></button>
+        </form>
+        <hr />
+        <div class="panelhead"><span class="sectioncount">02</span><h2>Driver & playback</h2></div>
+        <div class="field"><label for="bookingCode">Accepted booking code</label><input id="bookingCode" type="text" placeholder="ORD-..." autocomplete="off" /><p class="hint">Copy from Driver → Ongoing Deliveries. The logged-in driver must own it.</p></div>
+        <div class="pair"><label>Full trip travel time (minutes)<input id="minutes" type="number" value="20" min="1" max="240" /></label><label>Playback speed<select id="speed"><option value="1">1× — real time</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option selected value="20">20×</option><option value="40">40×</option><option value="60">60×</option><option value="120">120×</option></select></label></div>
+        <p id="durationPreview" class="hint"></p>
+        <label class="checkrow"><input id="fastSync" type="checkbox" checked /><span><strong>Fast REST syncing</strong><small>Send simulated GPS using your existing authenticated booking location endpoint every ~2 seconds. Disable it to test the driver's own GPS publishing behavior (normally limited to ~20 seconds).</small></span></label>
+        <button id="openDriver" class="button secondary full" type="button">Open separate driver browser ↗</button>
+        <p class="hint">Log in inside the browser opened by Playwright, accept the booking, and leave the driver dashboard open.</p>
+      </section>
+      <section class="panel visualization">
+        <div class="panelhead"><span class="sectioncount">03</span><h2>Route preview & simulator</h2><span id="status" class="status">Not started</span></div>
+        <div class="routecanvas"><canvas id="map" width="950" height="550" role="img" aria-label="Schematic road route preview"></canvas>
+          <div class="maplabel">GEOAPIFY ROAD GEOMETRY · SCHEMATIC VIEW</div>
+        </div>
+        <div class="legend"><span><i class="line blue"></i> Driver → Pickup</span><span><i class="line navy"></i> Pickup → Drop-off</span><span><i class="dot driver"></i> Simulated driver</span></div>
+        <div class="stats"><div><small>Driver → pickup</small><strong id="pickupStat">—</strong></div><div><small>Pickup → drop-off</small><strong id="dropoffStat">—</strong></div><div><small>Driver GPS</small><strong id="gps">—</strong></div></div>
+        <div class="track"><div class="tracktop"><strong id="stageTitle">Calculate a route to begin</strong><span id="percent">0%</span></div><div class="progress"><div id="bar"></div></div><div id="stageHelp" class="hint">No route calculated yet.</div></div>
+        <div class="controls"><button id="start" type="button" class="button primary" disabled>▶ Start drive</button><button id="pause" type="button" class="button secondary" disabled>Ⅱ Pause</button><button id="resume" type="button" class="button secondary" disabled>▶ Continue</button><button id="stop" type="button" class="button danger" disabled>■ Stop</button></div>
+        <div class="activity"><div><span class="activitylabel">Simulator REST sync requests</span><strong id="sent">0</strong></div><p id="apiResult">No GPS requests sent yet.</p></div>
+        <div id="error" class="error" role="alert" hidden></div>
+        <div class="note"><strong>Pickup checkpoint:</strong> At the end of leg 1, use the actual GASFAR driver page to click <em>I've Arrived at Pickup</em> and <em>Confirm Package Pickup</em>. Then click <em>Continue</em> here. At drop-off, confirm arrival and delivery PIN in GASFAR; this simulator does not change booking status.</div>
+      </section>
+    </div>
+    <footer>Local test tool • Independent browser cookies • Uses your existing Express/Mongoose booking API • Never use on real deliveries</footer>
+  </main>
+</body>
+</html>

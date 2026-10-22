@@ -58,7 +58,7 @@ function ClientFooter() {
 export default function UserLayout({ children, hideFooter = false, user, notifications }) {
   return (
     <div className="client-layout">
-      <AppHeader role="user" user={user} notifications={notifications} profilePath="/profile" />
+      <AppHeader role="customer" user={user} notifications={notifications} profilePath="/profile" />
       <main className="client-main">{children}</main>
       {!hideFooter && <ClientFooter />}
     </div>

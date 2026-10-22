@@ -36,8 +36,10 @@ import { ROUTES } from "./paths.js";
 // The pages below this route are visible only to the chosen role.
 // IMPORTANT: Real security will also be checked by Express on every API request.
 function ProtectedRoute({ allowedRole }) {
-  const { loggedIn, role } = useAuth();
+  const { loggedIn, role, loading } = useAuth();
   const location = useLocation();
+
+  if (loading) return <div role="status" style={{ padding: 24 }}>Checking session…</div>;
 
   if (!loggedIn || role !== allowedRole) {
     return <Navigate to={ROUTES.login} replace state={{ from: location }} />;
@@ -63,7 +65,7 @@ export default function AppRoutes({
       <Route path={ROUTES.forgotPassword} element={<ForgotPasswordPage />} />
 
       {/* Customer pages */}
-      <Route element={<ProtectedRoute allowedRole="user" />}>
+      <Route element={<ProtectedRoute allowedRole="customer" />}>
         <Route path={ROUTES.bookDelivery} element={<BookDeliveryPage savedAddresses={savedAddresses} onSaveAddress={onSaveAddress} />} />
         <Route path={ROUTES.activeDelivery} element={<ActiveDeliveryPage />} />
         <Route path={ROUTES.history} element={<OrderHistoryPage reviews={reviews} onSubmitReview={onSubmitReview} />} />

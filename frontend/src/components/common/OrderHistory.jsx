@@ -3,7 +3,6 @@ import { ArrowLeft, Check, Star } from "lucide-react";
 import { FiPhone } from "react-icons/fi";
 import { useBookings } from "../../hooks/useBookings.js";
 import { groupOf, statusOf } from "../../utils/helpers.js";
-import { MOCK_DRIVER } from "../../data/demo/clientMockData.js";
 import { MapPicker } from "./MapComponents.jsx";
 import { RouteStrip } from "./BookingUI.jsx";
 
@@ -271,14 +270,10 @@ export default function OrderHistory({ role, reviews = {}, onSubmitReview = () =
   const [activeTab, setActiveTab] = useState("Completed");
   const [expanded, setExpanded] = useState(null);
 
-  // The existing demo filtering stays the same until real user accounts are connected.
-  const completedBookings = bookings.filter((booking) => {
-    const isMine = isDriver
-      ? booking.driver?.name === MOCK_DRIVER.name
-      : booking.customerName === "Juan Dela Cruz";
-    const isFinished = ["delivered", "completed", "cancelled"].includes(booking.status);
-    return isMine && isFinished;
-  });
+  // The REST API returns only the bookings this customer/driver may view.
+  const completedBookings = bookings.filter((booking) =>
+    ["delivered", "cancelled"].includes(booking.status)
+  );
   const visibleBookings = completedBookings.filter(
     (booking) => groupOf(booking.status) === activeTab.toLowerCase()
   );

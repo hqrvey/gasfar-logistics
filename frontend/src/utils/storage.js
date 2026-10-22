@@ -1,6 +1,4 @@
 export const STORAGE_KEYS = {
-  loggedIn: "gasfar_logged_in",
-  authRole: "gasfar_auth_role",
   sidebar: "gasfar_sidebar",
   adminName: "gasfar_admin_name",
   adminEmail: "gasfar_admin_email",

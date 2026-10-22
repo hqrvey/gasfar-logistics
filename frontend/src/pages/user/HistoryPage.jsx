@@ -1,12 +1,14 @@
+import { useAuth } from "../../context/AuthContext.jsx";
 import UserLayout from "../../layouts/UserLayout.jsx";
 import OrderHistory from "../../components/common/OrderHistory.jsx";
 import { MOCK_NOTIFICATIONS_USER } from "../../data/demo/clientMockData.js";
 
 // Role-specific page: shared history UI stays in components/common.
 export default function OrderHistoryPage({ reviews, onSubmitReview }) {
+  const { user } = useAuth();
   return (
-    <UserLayout user={{ name: "Juan Dela Cruz" }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
-      <OrderHistory role="user" reviews={reviews} onSubmitReview={onSubmitReview} />
+    <UserLayout user={{ name: `${user?.firstName || ""} ${user?.lastName || ""}`.trim() }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
+      <OrderHistory role="customer" reviews={reviews} onSubmitReview={onSubmitReview} />
     </UserLayout>
   );
 }

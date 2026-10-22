@@ -1,3 +1,4 @@
+import { useAuth } from "../../context/AuthContext.jsx";
 import React, { useState } from "react";
 import { FiEdit2, FiLock, FiMail, FiPhone, FiTrash2, FiTruck, FiUser, FiX } from "react-icons/fi";
 import { BadgeCheck, Bike, Car, CarFront, ShieldCheck, Star, TrendingUp, Truck, Van } from "lucide-react";
@@ -183,13 +184,14 @@ const DriverProfilePage = () => {
   const [showVehicleChange, setShowVehicleChange] = useState(false);
 
   const { bookings } = useBookings();
+  const { user } = useAuth();
   const { reviews } = useReviews();
 
   /* Real reviews mula sa users (localStorage) */
   const myReviews = Object.entries(reviews)
     .filter(([orderId]) => {
       const b = bookings.find((x) => x.id === orderId);
-      return b?.driver?.name === MOCK_DRIVER.name;
+      return b?.driverId && b.driverId === user?.id;
     })
     .map(([orderId, r]) => {
       const b = bookings.find((x) => x.id === orderId);
@@ -205,7 +207,7 @@ const DriverProfilePage = () => {
     });
 
   const completedTrips = bookings.filter(
-    (b) => b.driver?.name === MOCK_DRIVER.name && ["delivered", "completed"].includes(b.status)
+    (b) => b.driverId === user?.id && ["delivered", "completed"].includes(b.status)
   ).length;
 
   /* Combined avg — seed + real */

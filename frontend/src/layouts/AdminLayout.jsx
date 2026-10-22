@@ -186,9 +186,11 @@ function ProfileMenu({ open, onToggle }) {
   const { name, photo, logout } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
-    navigate(ROUTES.login, { replace: true });
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate(ROUTES.login, { replace: true });
+    } catch { alert("Logout failed. Please check your connection."); }
   };
 
   return (

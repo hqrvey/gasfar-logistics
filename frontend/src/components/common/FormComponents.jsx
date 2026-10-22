@@ -92,7 +92,7 @@ const OtpInput = ({ length = 6, value, onChange }) => {
 };
 
 /* ═══ FileUpload ═══ */
-const MAX_MB = 25;
+const MAX_MB = 8; // Matches the backend driver upload limit.
 const FileUpload = ({ label, imageOnly = false, required = false, value, onChange, error = "" }) => {
   const inputRef = useRef();
   const acceptAttr = imageOnly ? "image/jpeg,image/png" : "image/jpeg,image/png,application/pdf";

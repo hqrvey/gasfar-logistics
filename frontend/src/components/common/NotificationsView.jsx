@@ -2,7 +2,7 @@ import { useState } from "react";
 import { MOCK_NOTIFICATIONS_USER, MOCK_NOTIFICATIONS_DRIVER } from "../../data/demo/clientMockData.js";
 
 const FILTERS = {
-  user: [
+  customer: [
     { id: "all", label: "All" },
     { id: "unread", label: "Unread" },
     { id: "order", label: "Your Deliveries" },

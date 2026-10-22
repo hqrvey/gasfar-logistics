@@ -17,7 +17,6 @@ const ProfileLayout = ({ header, tabs, activeTab, onTabChange, children }) => (
     </div>
   </div>
 );
-
 const PhotoUploader = ({ photo, fallback, onUpload, editable = false }) => {
   const inputRef = useRef();
   const handleFile = (file) => { if (!file) return; const allowed = ["image/jpeg", "image/png"]; if (!allowed.includes(file.type)) { alert("Only JPG or PNG allowed."); return; } if (file.size / 1024 / 1024 > 5) { alert("Max file size is 5MB."); return; } onUpload(file); };
@@ -31,7 +30,6 @@ const PhotoUploader = ({ photo, fallback, onUpload, editable = false }) => {
     </div>
   );
 };
-
 const ChangePasswordTab = () => {
   const [cur, setCur] = useState("");
   const [pw, setPw] = useState("");
@@ -82,7 +80,6 @@ const LocationChooserModal = ({ mode, addresses, onPickSaved, onPinOnMap, onClos
     </div>
   </div>
 );
-
 const AddressEditorModal = ({ initial, onClose, onSave }) => {
   const [label, setLabel] = useState(initial?.label || "");
   const [icon, setIcon] = useState(initial?.icon || "home");

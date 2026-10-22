@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { FiArrowLeft, FiCheck, FiClock, FiMapPin, FiPlus, FiX, FiMaximize2, FiMinimize2, FiUpload } from "react-icons/fi";
 import { ArrowLeft, ArrowRight, Bike, Car, CarFront, CalendarDays, Check, CircleDollarSign, Clock, CreditCard, FileText, Hand, MapPin, Navigation, Package, Pill, Search, Shirt, Thermometer, TriangleAlert, Truck, Utensils, Van, Armchair, BookOpen, Cog, User, UserRound, ArrowUp, Droplets, Layers, Monitor, ShieldCheck, Zap } from "lucide-react";
 import { peso } from "../../utils/helpers.js";
-import { bookingStore } from "../../services/bookingStore.js";
+import { bookingService } from "../../services/bookingService.js";
+import { useAuth } from "../../context/AuthContext.jsx";
 import { MapPicker, MapModeSwitcher, MapSearchBar, MapZoomControls } from "../../components/common/MapComponents.jsx";
 import { SqCard, LocCard, Field, RR, EmptyState, ReviewGroup } from "../../components/common/BookingUI.jsx";
 import UserLayout from "../../layouts/UserLayout.jsx";
@@ -62,9 +63,13 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
   const [mapExpanded, setMapExpanded] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [confirmedId, setConfirmedId] = useState("");
+  const [confirmedPrice, setConfirmedPrice] = useState(null);
   const [showSavedPicker, setShowSavedPicker] = useState(null);
   const mapRef = useRef(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [submitting, setSubmitting] = useState(false);
+  const [bookingError, setBookingError] = useState("");
 
   // Google Maps is not Leaflet: do not call invalidateSize().
   // Trigger a map resize when the map panel expands or collapses.
@@ -90,43 +95,40 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
   const selItems = ITEM_TYPES.filter(i => form.itemTypes.includes(i.id));
   const selHandling = HANDLING.filter(i => form.handlingInstructions.includes(i.id));
 
-  // Save locally for now. Replace bookingStore with the booking API later.
-  const handleConfirm = () => {
-    const id = `ORD-${Date.now()}`;
-    bookingStore.create({
-      id,
-      status: "pending",
-      pickup: form.pickup,
-      dropoff: form.dropoff,
-      vehicleType: (selVehicle?.label) || form.vehicleType,
-      itemDetails: `${selItems.map(i => i.label).join(", ")} · Qty: ${form.quantity}`,
-      handlingInstructions: form.handlingInstructions,
-      notesToDriver: form.notesToDriver,
-      recipientName: form.recipientName,
-      recipientPhone: form.recipientPhone,
-      recipientUnit: form.recipientUnit,
-      scheduleType: form.scheduleType,
-      scheduleDate: form.scheduleDate,
-      scheduleTime: form.scheduleTime,
-      itemTypes: form.itemTypes,
-      itemWeight: form.itemWeight,
-      quantity: form.quantity,
-      paymentSide: form.paymentSide,
-      // Files cannot be stored directly as JSON in localStorage.
-      // When you build Express file uploads, send itemPhoto separately.
-      price: peso(estimatedFee ?? 0),
-      paymentMethod: form.paymentMethod.charAt(0).toUpperCase() + form.paymentMethod.slice(1),
-      customerName: "Juan Dela Cruz",
-      contactNumber: form.recipientPhone,
-      deliveryType: form.deliveryType,
-      driver: null,
-      driverLocation: null,
-      etaMins: null,
-      bookedAt: new Date().toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" }),
-    });
-    setConfirmedId(id);
-    setShowSuccess(true);
-  };
+  // The backend creates the booking, calculates the official price and returns its ID.
+  async function handleConfirm() {
+    if (submitting) return;
+    setSubmitting(true);
+    setBookingError("");
+    try {
+      const result = await bookingService.create({
+        pickup: form.pickup,
+        dropoff: form.dropoff,
+        vehicleType: form.vehicleType,
+        deliveryType: form.deliveryType,
+        recipientName: form.recipientName,
+        recipientPhone: form.recipientPhone,
+        recipientUnit: form.recipientUnit,
+        scheduleType: form.scheduleType === "later" ? "scheduled" : "now",
+        scheduleDate: form.scheduleDate,
+        scheduleTime: form.scheduleTime,
+        itemTypes: form.itemTypes,
+        quantity: form.quantity,
+        itemWeight: form.itemWeight,
+        handlingInstructions: form.handlingInstructions,
+        notesToDriver: form.notesToDriver,
+        paymentMethod: form.paymentMethod,
+        paymentSide: form.paymentSide,
+      });
+      setConfirmedId(result.booking.id);
+      setConfirmedPrice(result.booking.price);
+      setShowSuccess(true);
+    } catch (error) {
+      setBookingError(error.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   const useSaved = (addr) => { const pin = { lat: addr.lat, lng: addr.lng, address: addr.address }; if (showSavedPicker === "pickup") handlePickup(pin); else handleDropoff(pin); setShowSavedPicker(null); };
   const useMapPicker = () => { setMapMode(showSavedPicker); setShowSavedPicker(null); };
@@ -143,7 +145,7 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
   ];
 
   return (
-    <UserLayout hideFooter user={{ name: "Juan Dela Cruz" }} notifications={MOCK_NOTIFICATIONS_USER}>
+    <UserLayout hideFooter user={{ name: `${user?.firstName || ""} ${user?.lastName || ""}`.trim() }} notifications={MOCK_NOTIFICATIONS_USER}>
       <div className="bd-shell">
         <div className={`bd-panel${!isLocStep ? " bd-panel--wide" : ""}`}>
           <div className={`bd-inner${!isLocStep ? " bd-inner--wide" : ""}`}>
@@ -199,7 +201,7 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
                 </div>
                 <div className="bd-actions">
                   <button className="btn-bd-back" type="button" onClick={() => setStep(2)}><ArrowLeft size={14} /> Back</button>
-                  <button className="btn-bd-next" type="button" onClick={() => setStep(4)}>Continue <ArrowRight size={14} /></button>
+                  <button className="btn-bd-next" type="button" onClick={() => setStep(4)} disabled={!form.recipientName.trim() || !/^\+?\d[\d\s-]{8,14}$/.test(form.recipientPhone)}>Continue <ArrowRight size={14} /></button>
                 </div>
               </div>
             )}
@@ -282,8 +284,9 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
                   <RR label="Payer" value={form.paymentSide === "sender" ? "Sender (you)" : "Recipient"} />
                   {estimatedFee !== null && <RR label="Est. fee" value={peso(estimatedFee)} price />}
                 </ReviewGroup>
+                {bookingError && <p role="alert" style={{ color: "#b42318", marginBottom: 12 }}>{bookingError}</p>}
                 <div className="bd-safe-note"><ShieldCheck size={13} /> Your details are safe and secure with GASFAR.</div>
-                <div className="bd-actions bd-actions--review"><button className="btn-bd-back" type="button" onClick={() => setStep(5)}><ArrowLeft size={14} /> Back</button><button className="btn-bd-book" type="button" onClick={handleConfirm}><Check size={14} /> Confirm booking</button></div>
+                <div className="bd-actions bd-actions--review"><button className="btn-bd-back" type="button" onClick={() => setStep(5)}><ArrowLeft size={14} /> Back</button><button className="btn-bd-book" type="button" onClick={handleConfirm} disabled={submitting}><Check size={14} /> {submitting ? "Saving booking…" : "Confirm booking"}</button></div>
               </div>
             )}
           </div>
@@ -305,11 +308,11 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
             <div className="success-modal__card">
               <div className="success-modal__icon"><Check size={32} strokeWidth={3} /></div>
               <h2 id="success-title" className="success-modal__title">Booking Confirmed!</h2>
-              <p className="success-modal__desc">Your delivery has been booked. We're matching you with a driver now.</p>
+              <p className="success-modal__desc">Your delivery has been saved in the database. We're matching you with a driver now.</p>
               <div className="success-modal__details">
                 <div className="success-modal__detail"><span className="success-modal__detail-label">Booking ID</span><span className="success-modal__detail-value">{confirmedId}</span></div>
                 {routeInfo && (<div className="success-modal__detail"><span className="success-modal__detail-label">Route</span><span className="success-modal__detail-value">{routeInfo.distance} km · ~{routeInfo.durationLabel}</span></div>)}
-                {estimatedFee !== null && (<div className="success-modal__detail"><span className="success-modal__detail-label">Total fee</span><span className="success-modal__detail-value success-modal__detail-value--price">{peso(estimatedFee)}</span></div>)}
+                {confirmedPrice && (<div className="success-modal__detail"><span className="success-modal__detail-label">Total fee</span><span className="success-modal__detail-value success-modal__detail-value--price">{confirmedPrice}</span></div>)}
               </div>
               <div className="success-modal__actions">
                 <button type="button" className="success-modal__btn success-modal__btn--ghost" onClick={() => setShowSuccess(false)}>Close</button>

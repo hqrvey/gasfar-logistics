@@ -21,7 +21,7 @@ export const DRIVER_NAV = [
 
 // Both customers and drivers use this header with different navigation links.
 export default function AppHeader({
-  role = "user",
+  role = "customer",
   user,
   notifications = [],
   online = true,
@@ -33,12 +33,19 @@ export default function AppHeader({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout } = useAuth();
+  const { logout, user: authenticatedUser } = useAuth();
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
 
   const isDriver = role === "driver";
+  const displayName =
+    user?.name ||
+    [authenticatedUser?.firstName, authenticatedUser?.lastName]
+      .filter(Boolean)
+      .join(" ") ||
+    (isDriver ? "Driver" : "Customer");
+
   const navigation = isDriver ? DRIVER_NAV : USER_NAV;
   const unreadCount = notifications.filter((item) => !item.read).length;
   const lowBalance = isDriver && walletBalance !== null && walletBalance < minBalance;
@@ -47,9 +54,11 @@ export default function AppHeader({
     return location.pathname === path || location.pathname.startsWith(path + "/");
   }
 
-  function handleLogout() {
-    logout();
-    navigate("/login", { replace: true });
+  async function handleLogout() {
+    try {
+      await logout();
+      navigate("/login", { replace: true });
+    } catch { alert("Logout failed. Please check your connection."); }
   }
 
   function toggleNotifications() {
@@ -148,7 +157,7 @@ export default function AppHeader({
         <div className="client-header__profile-wrap">
           <button className="client-header__profile-btn" onClick={toggleProfile}>
             <span className="client-header__avatar"><FiUser size={18} /></span>
-            <span className="client-header__username">{isDriver ? user.name : `Hi, ${user.name}`}</span>
+            <span className="client-header__username">{isDriver ? displayName : `Hi, ${displayName}`}</span>
             <FiChevronDown size={16} className={`chevron ${profileOpen ? "open" : ""}`} />
           </button>
 

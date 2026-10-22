@@ -1,0 +1,16 @@
+{
+  "name": "gasfar-gps-simulator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local development-only GASFAR route and GPS simulator",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "playwright": "^1.56.0"
+  },
+  "engines": { "node": ">=20.0.0" }
+}

@@ -105,8 +105,7 @@ const MapPicker = React.forwardRef(function MapPicker({
   const deliveryLineRef = useRef(null);
   const pickupLineRef = useRef(null);
   const driverRouteRequest = useRef({ time: 0, pickup: "", driver: null, id: 0 });
-  const lastFittedStage = useRef(false);
-  const skipInitialFitRef = useRef(false);
+  const lastFittedStage = useRef("");
   const latestCallbacks = useRef({});
 
   React.useImperativeHandle(ref, () => ({
@@ -144,39 +143,12 @@ const MapPicker = React.forwardRef(function MapPicker({
       }
       try {
         const { Map } = await importLibrary("maps");
-
-        const currentLocation = await new Promise((resolve) => {
-          if (!navigator.geolocation) {
-            resolve(null);
-            return;
-          }
-
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              resolve({
-                lat: position.coords.latitude,
-                lng: position.coords.longitude,
-              });
-            },
-            () => resolve(null),
-            {
-              enableHighAccuracy: true,
-              timeout: 10000,
-              maximumAge: 60000,
-            }
-          );
-        });
-
         if (cancelled || !mapDivRef.current) return;
 
-        skipInitialFitRef.current = Boolean(currentLocation);
-
         mapRef.current = new Map(mapDivRef.current, {
-          center: currentLocation ||
-            (validPoint(pickupCoords)
-              ? pickupCoords
-              : { lat: 14.7969, lng: 120.8787 }),
-          zoom: currentLocation ? 14 : 13,
+          center: validPoint(pickupCoords) ? pickupCoords : { lat: 14.7969, lng: 120.8787 },
+          zoom: 13,
+          zoomControl: true,
           streetViewControl: false,
           mapTypeControl: false,
           fullscreenControl: false,
@@ -201,6 +173,8 @@ const MapPicker = React.forwardRef(function MapPicker({
       cancelled = true;
       if (mapRef.current) google.maps.event.clearInstanceListeners(mapRef.current);
     };
+    // Map initialization must not re-run when the pins change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update the markers rather than recreating them on every GPS update.
@@ -234,6 +208,7 @@ const MapPicker = React.forwardRef(function MapPicker({
       { url: PICKUP_ICON_URL, scaledSize: size }, "pickup", pinLabel);
     showMarker(dropoffMarkerRef, dropoff,
       { url: DROPOFF_ICON_URL, scaledSize: size }, "dropoff", "DROP-OFF LOCATION");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pickup, dropoff, mapReady, pinLabel]);
 
   useEffect(() => {
@@ -254,15 +229,7 @@ const MapPicker = React.forwardRef(function MapPicker({
   // Fit the map to pickup, drop-off, and (when available) the driver's position.
   // Do not repeatedly zoom out every time the driver's GPS changes.
   useEffect(() => {
-    if (!mapReady) return;
-
-    // Keep the device location centered when the map first opens
-    if (skipInitialFitRef.current) {
-      skipInitialFitRef.current = false;
-      return;
-    }
-
-    if (!validPoint(pickup)) return;
+    if (!mapReady || !validPoint(pickup)) return;
     // Refit once when GPS first becomes available, even if the map was
     // already fitted before the driver enabled location sharing.
     const stageKey = `${pickup.lat},${pickup.lng}|${dropoff?.lat},${dropoff?.lng}|${showDriverToPickup && validPoint(driverCoords) ? "driver-visible" : "no-driver"}`;

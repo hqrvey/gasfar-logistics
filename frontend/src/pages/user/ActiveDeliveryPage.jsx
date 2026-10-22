@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { FiX } from "react-icons/fi";
 import { ArrowLeft, ArrowRight, Check, Clock, MapPin, Navigation, Search, Star, TriangleAlert } from "lucide-react";
 import { useBookings } from "../../hooks/useBookings.js";
+import { bookingService } from "../../services/bookingService.js";
+import { useAuth } from "../../context/AuthContext.jsx";
 import { ACTIVE_DELIVERY_STATUSES, DELIVERY_STATUS_LABELS, DRIVER_FLOW } from "../../utils/helpers.js";
 import { MapPicker } from "../../components/common/MapComponents.jsx";
 import UserLayout from "../../layouts/UserLayout.jsx";
@@ -97,7 +99,7 @@ const ActiveDeliveryTracking = ({ order, onBack, onHistory }) => {
             </div>
             <h2 className="bd-step-title">{statusLabel}</h2>
             <p className="bd-step-desc">
-              {finished ? arrivalMessage : "Track your delivery status below."}
+              {finished ? arrivalMessage : "Track the five stages of your delivery below."}
             </p>
           </div>
           <div className="active-eta-card">
@@ -187,7 +189,13 @@ const UserCancelOrderModal = ({ order, onConfirm, onClose }) => {
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const handleConfirm = () => { if (!reason || submitting) return; setSubmitting(true); const label = USER_CANCEL_REASONS.find((r) => r.id === reason)?.label || reason; setTimeout(() => onConfirm(label), 400); };
+  async function handleConfirm() {
+    if (!reason || submitting) return;
+    setSubmitting(true);
+    const label = USER_CANCEL_REASONS.find((r) => r.id === reason)?.label || reason;
+    await onConfirm(notes ? `${label}: ${notes.trim()}` : label);
+    setSubmitting(false);
+  }
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card modal-card--narrow" onClick={(e) => e.stopPropagation()}>
@@ -231,7 +239,7 @@ const PendingDeliveryTracking = ({ order, onBack, onCancel = (...args) => {} }) 
         </div>
       </div>
       <div className="bd-map"><MapPicker viewOnly pickupCoords={order.pickup} dropoffCoords={order.dropoff} /></div>
-      {showCancelModal && (<UserCancelOrderModal order={order} onClose={() => setShowCancelModal(false)} onConfirm={(reason) => { setShowCancelModal(false); onCancel(order.id, reason); }} />)}
+      {showCancelModal && (<UserCancelOrderModal order={order} onClose={() => setShowCancelModal(false)} onConfirm={async (reason) => { await onCancel(order.id, reason); setShowCancelModal(false); }} />)}
     </div>
   );
 };
@@ -239,7 +247,9 @@ const PendingDeliveryTracking = ({ order, onBack, onCancel = (...args) => {} }) 
 /* ⬇⬇ ActiveDeliveryPage — binabasa na galing sa store */
 const ActiveDeliveryPage = () => {
   const navigate = useNavigate();
-  const { bookings: orders, update: updateOrder } = useBookings();
+  const { bookings: orders, loading, error: loadError, refresh } = useBookings();
+  const { user } = useAuth();
+  const [actionError, setActionError] = useState("");
   const [expandedId, setExpandedId] = useState(null);
   const [hoverId, setHoverId] = useState(null);
   const [tab, setTab] = useState("pending");
@@ -248,21 +258,26 @@ const ActiveDeliveryPage = () => {
   const activeOrders = orders.filter((o) => ACTIVE_DELIVERY_STATUSES.includes(o.status));
   const visibleOrders = tab === "pending" ? pendingOrders : activeOrders;
 
-  const handleCancel = (orderId, reason) => {
-    updateOrder(orderId, {
-      status: "cancelled",
-      cancelReason: reason,
-      cancelledBy: "user",
-      cancelledAt: new Date().toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" }),
-    });
-    setExpandedId(null);
-    setHoverId(null);
-  };
+  async function handleCancel(orderId, reason) {
+    setActionError("");
+    try {
+      await bookingService.cancel(orderId, reason);
+      await refresh();
+      setExpandedId(null);
+      setHoverId(null);
+    } catch (error) {
+      setActionError(error.message);
+      alert(error.message);
+    }
+  }
+
+  if (loading) return <UserLayout hideFooter><div role="status" style={{ padding: 24 }}>Loading bookings…</div></UserLayout>;
 
   if (orders.length === 0) {
     return (
-      <UserLayout user={{ name: "Juan Dela Cruz" }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
+      <UserLayout user={{ name: `${user?.firstName || ""} ${user?.lastName || ""}`.trim() }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
         <div className="active-empty">
+          {loadError && <p role="alert" style={{ color: "#b42318" }}>{loadError}</p>}
           <EmptyState Icon={Navigation} title="No active deliveries" message="Book a delivery to see your rider's live location and ETA here." />
           <button className="btn-bd-next" type="button" onClick={() => navigate("/place-order")}>Book a Delivery <ArrowRight size={14} /></button>
         </div>
@@ -272,7 +287,7 @@ const ActiveDeliveryPage = () => {
 
   if (expandedOrder) {
     return (
-      <UserLayout user={{ name: "Juan Dela Cruz" }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
+      <UserLayout user={{ name: `${user?.firstName || ""} ${user?.lastName || ""}`.trim() }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
         {expandedOrder.status === "pending" ? (
           <PendingDeliveryTracking order={expandedOrder} onBack={() => setExpandedId(null)} onCancel={handleCancel} />
         ) : (
@@ -289,10 +304,12 @@ const ActiveDeliveryPage = () => {
   const previewOrder = visibleOrders.find((o) => o.id === hoverId) || visibleOrders[0] || null;
 
   return (
-    <UserLayout user={{ name: "Juan Dela Cruz" }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
+    <UserLayout user={{ name: `${user?.firstName || ""} ${user?.lastName || ""}`.trim() }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
       <div className="bd-shell">
         <div className="bd-panel">
           <div className="bd-inner">
+            {loadError && <p role="alert" style={{ color: "#b42318" }}>{loadError}</p>}
+            {actionError && <p role="alert" style={{ color: "#b42318" }}>{actionError}</p>}
             <div className="bd-step-head">
               <div className="bd-step-meta"><span className="bd-step-count">{pendingOrders.length + activeOrders.length} Total</span><span className="bd-step-divider" /><span className="bd-step-eyebrow">Bookings and Deliveries</span></div>
               <h2 className="bd-step-title">Manage Bookings and Deliveries</h2>

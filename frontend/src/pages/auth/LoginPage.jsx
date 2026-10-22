@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { DEMO_USERS } from "../../data/demo/demoAccounts.js";
 import { HOME_BY_ROLE } from "../../routes/paths.js";
 import { FiClock, FiLock, FiMail, FiPackage, FiPhone, FiTruck, FiUser } from "react-icons/fi";
 import { MdOutlineVerifiedUser } from "react-icons/md";
@@ -22,7 +21,6 @@ const TAB_CONFIG = {
   phone: { id: "phone", label: "Phone Number", placeholder: "Enter your phone number", icon: FiPhone, type: "tel" },
   email: { id: "email", label: "Email", placeholder: "Enter your email", icon: FiMail, type: "email" },
 };
-const MAX_ATTEMPTS = 3;
 
 const LoginForm = () => {
   const navigate = useNavigate();
@@ -32,33 +30,36 @@ const LoginForm = () => {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
-  const [attempts, setAttempts] = useState(0);
-  const [locked, setLocked] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState({ message: "", id: 0 });
   const field = TAB_CONFIG[activeTab];
   const showToast = (message) => setToast((t) => ({ message, id: t.id + 1 }));
   const dismissToast = () => setToast((t) => ({ ...t, message: "" }));
-  const handleSubmit = (e) => {
+  async function handleSubmit(e) {
     e.preventDefault();
-    if (locked) return;
-    if (!identifier || !password) { showToast("Please fill in all fields."); return; }
-    const found = DEMO_USERS.find((u) => u.identifier === identifier.trim() && u.password === password);
-    if (found) {
-      login(found.role);
-      // Return to the requested page only if it belongs to this role.
-      const requestedPage = location.state?.from?.pathname;
-      const belongsToRole =
-        (found.role === "admin" && requestedPage?.startsWith("/admin")) ||
-        (found.role === "driver" && requestedPage?.startsWith("/driver")) ||
-        (found.role === "user" && requestedPage && !requestedPage.startsWith("/admin") && !requestedPage.startsWith("/driver"));
-      navigate(belongsToRole ? requestedPage : HOME_BY_ROLE[found.role], { replace: true });
+    if (!identifier.trim() || !password) {
+      showToast("Please fill in all fields.");
       return;
     }
-    const newAttempts = attempts + 1;
-    setAttempts(newAttempts);
-    if (newAttempts >= MAX_ATTEMPTS) { setLocked(true); showToast("Too many failed attempts. Account temporarily locked."); return; }
-    showToast(`Invalid credentials. ${MAX_ATTEMPTS - newAttempts} attempt(s) remaining.`);
-  };
+    setSubmitting(true);
+    try {
+      const account = await login(identifier, password, remember);
+      const requestedPage = location.state?.from?.pathname;
+      const belongsToRole =
+        (account.role === "admin" && requestedPage?.startsWith("/admin")) ||
+        (account.role === "driver" && requestedPage?.startsWith("/driver")) ||
+        (account.role === "customer" && requestedPage && !requestedPage.startsWith("/admin") && !requestedPage.startsWith("/driver"));
+      navigate(belongsToRole ? requestedPage : HOME_BY_ROLE[account.role], { replace: true });
+    } catch (error) {
+      if (error.code === "DRIVER_PENDING") {
+        navigate("/application-pending");
+      } else {
+        showToast(error.message);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
   return (
     <div className="login-form-card">
       <Toast message={toast.message} onClose={dismissToast} />
@@ -71,7 +72,7 @@ const LoginForm = () => {
           <label className="remember-label"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="remember-checkbox" /><span>Remember me</span></label>
           <a href="/forgot-password" className="forgot-link">Forgot password?</a>
         </div>
-        <button type="submit" className="btn-signin" disabled={locked} style={locked ? { opacity: 0.6, cursor: "not-allowed" } : {}}>Sign In</button>
+        <button type="submit" className="btn-signin" disabled={submitting}>{submitting ? "Signing in…" : "Sign In"}</button>
       </form>
       <p className="login-form-card__footer">Don't have an account? <a href="/signup" className="create-link">Create account</a></p>
     </div>

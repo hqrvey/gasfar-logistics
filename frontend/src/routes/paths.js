@@ -28,6 +28,6 @@ export const ROUTES = {
 
 export const HOME_BY_ROLE = {
   admin: ROUTES.dashboard,
-  user: ROUTES.bookDelivery,
+  customer: ROUTES.bookDelivery,
   driver: ROUTES.driverHome,
 };
