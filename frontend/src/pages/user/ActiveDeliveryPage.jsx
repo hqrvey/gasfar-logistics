@@ -66,9 +66,12 @@ const ActiveDeliveryTracking = ({ order, onBack, onHistory }) => {
     return () => clearInterval(timer);
   }, []);
 
+  // The timeline is calculated from the SINGLE status returned by Express.
+  // The customer cannot advance these steps: only the assigned driver can.
   const currentIdx = ACTIVE_STAGES.indexOf(order.status);
   const finished = order.status === "delivered" || order.status === "cancelled";
   const gpsAge = now - (order.locationUpdatedAt || 0);
+  // Do not label old GPS values as live. If older than 2 min, hide the marker.
   const gpsFresh = Boolean(order.driverLocation && order.locationUpdatedAt && gpsAge < 120000);
   const headingToPickup = order.status === "accepted";
   const statusLabel = ACTIVE_STATUS_LABEL[order.status]?.label || "Tracking";
@@ -244,9 +247,11 @@ const PendingDeliveryTracking = ({ order, onBack, onCancel = (...args) => {} }) 
   );
 };
 
-/* ⬇⬇ ActiveDeliveryPage — binabasa na galing sa store */
+// CUSTOMER TRACKING: Displays the SAME MongoDB booking the driver changes.
+// Every refresh gets the latest stage + GPS point from GET /api/bookings.
 const ActiveDeliveryPage = () => {
   const navigate = useNavigate();
+  // "orders" is the JSON booking list from Express, stored in React state.
   const { bookings: orders, loading, error: loadError, refresh } = useBookings();
   const { user } = useAuth();
   const [actionError, setActionError] = useState("");
@@ -254,14 +259,17 @@ const ActiveDeliveryPage = () => {
   const [hoverId, setHoverId] = useState(null);
   const [tab, setTab] = useState("pending");
   const expandedOrder = orders.find((o) => o.id === expandedId) || null;
+  // Split records by status for the two existing tabs.
   const pendingOrders = orders.filter((o) => o.status === "pending");
   const activeOrders = orders.filter((o) => ACTIVE_DELIVERY_STATUSES.includes(o.status));
   const visibleOrders = tab === "pending" ? pendingOrders : activeOrders;
 
+  // Sends PATCH /api/bookings/:id/cancel; backend checks customer ownership.
   async function handleCancel(orderId, reason) {
     setActionError("");
     try {
       await bookingService.cancel(orderId, reason);
+      // Fetch again so the cancelled booking disappears from active tracking.
       await refresh();
       setExpandedId(null);
       setHoverId(null);

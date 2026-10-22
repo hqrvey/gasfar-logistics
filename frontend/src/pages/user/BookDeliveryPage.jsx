@@ -95,12 +95,18 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
   const selItems = ITEM_TYPES.filter(i => form.itemTypes.includes(i.id));
   const selHandling = HANDLING.filter(i => form.handlingInstructions.includes(i.id));
 
-  // The backend creates the booking, calculates the official price and returns its ID.
+  // STEP A (CUSTOMER): The final "Confirm Booking" button calls this function.
+  // React collects form state -> bookingService.create() -> HTTP POST /api/bookings.
+  // Express validates the request, computes the price, and saves it in MongoDB.
+  // Express returns JSON { booking: {...} }; apiRequest() converts JSON to an object.
   async function handleConfirm() {
     if (submitting) return;
     setSubmitting(true);
     setBookingError("");
     try {
+      // The object below is the request body (req.body in Express).
+      // We intentionally do NOT send customerId or an official price:
+      // Express uses req.user from the login cookie and calculates the price.
       const result = await bookingService.create({
         pickup: form.pickup,
         dropoff: form.dropoff,
@@ -120,12 +126,16 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
         paymentMethod: form.paymentMethod,
         paymentSide: form.paymentSide,
       });
+      // The MongoDB booking now exists. Show its public order reference.
       setConfirmedId(result.booking.id);
+      // Express sends back the price it actually calculated using Geoapify.
       setConfirmedPrice(result.booking.price);
       setShowSuccess(true);
     } catch (error) {
+      // Validation/network failures should show a message instead of success.
       setBookingError(error.message);
     } finally {
+      // Always re-enable the button, whether saving succeeded or failed.
       setSubmitting(false);
     }
   }

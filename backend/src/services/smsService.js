@@ -1,21 +1,25 @@
-// A single SMS sender for GASFAR. Use this from registration now and from
-// password recovery / delivery confirmation when those backend flows exist.
-// Never call TextBee directly from React: keep the API key on the server.
-export async function sendSMS(phone, message) {
-  const apiKey = process.env.TEXTBEE_API_KEY?.trim();
+/*
+  TEXTBEE SMS SERVICE
 
+  React never receives the TextBee API key. Controllers call sendSMS(), which
+  contacts TextBee from Node.js. A configured Android phone sends the SMS.
+*/
+export async function sendSMS(phone, message) {
+  const apiKey = process.env.TEXTBEE_API_KEY;
+
+  // During local development only, we can print OTPs if no TextBee key exists.
   if (!apiKey) {
-    if (process.env.NODE_ENV !== "production" && process.env.DEV_LOG_OTP === "true") {
-      console.log(`[DEV SMS for ${phone}] ${message}`);
+    const isDevelopment = process.env.NODE_ENV !== "production";
+    if (isDevelopment && process.env.DEV_LOG_OTP === "true") {
+      console.log("[DEV SMS for " + phone + "] " + message);
       return;
     }
-    throw new Error("TextBee is not configured. Set TEXTBEE_API_KEY in backend/.env.");
+    throw new Error("TextBee is not configured in backend/.env.");
   }
 
-  const body = { recipients: [phone], message };
-  if (process.env.TEXTBEE_DEVICE_ID?.trim()) {
-    body.deviceId = process.env.TEXTBEE_DEVICE_ID.trim();
-  }
+  // TextBee accepts an array of recipients, even for a single SMS.
+  const body = { recipients: [phone], message: message };
+  if (process.env.TEXTBEE_DEVICE_ID) body.deviceId = process.env.TEXTBEE_DEVICE_ID.trim();
 
   let response;
   try {
@@ -25,24 +29,31 @@ export async function sendSMS(phone, message) {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(body), // Convert JavaScript object to JSON text.
       signal: AbortSignal.timeout(15000),
     });
   } catch (error) {
-    console.error("TextBee connection error:", error.message);
-    throw new Error("SMS service is temporarily unreachable. Please try again.");
+    console.error("TextBee connection problem:", error.message);
+    throw new Error("SMS service is unreachable. Please try again.");
   }
 
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok || result.success === false || result.data?.success === false ||
-      (result.data?.successCount === 0 && result.data?.failureCount > 0)) {
-    console.error("TextBee rejected SMS:", response.status, result.error || result.message || "Unknown error");
-    throw new Error("SMS could not be sent. Check your TextBee device and try again.");
+  // A valid HTTP response can still contain TextBee's own failure message.
+  let data = {};
+  try {
+    data = await response.json();
+  } catch {
+    // Some failures have no JSON body.
   }
 
-  if (result.data?.warning) {
-    console.warn("TextBee SMS warning:", result.data.warning.message);
+  if (!response.ok || data.success === false ||
+      (data.data && data.data.success === false) ||
+      (data.data && data.data.successCount === 0 && data.data.failureCount > 0)) {
+    console.error("TextBee rejected SMS:", response.status, data.message || data.error);
+    throw new Error("SMS could not be sent. Check your TextBee device.");
   }
 
-  return result.data?.smsBatchId;
+  if (data.data && data.data.warning) {
+    console.warn("TextBee warning:", data.data.warning.message);
+  }
+  return data.data && data.data.smsBatchId;
 }

@@ -175,8 +175,10 @@ const ActiveDeliveryCard = ({ booking, status, onExpand }) => {
   );
 };
 
-/* ⬇⬇ DriverHomePage — binabasa na galing sa store, at nagsusulat na rin */
+// DRIVER PAGE: Reads bookings from Express and advances their delivery statuses.
 const DriverHomePage = () => {
+  // useBookings calls GET /api/bookings and refreshes approximately every 8 seconds.
+  // The backend shows eligible pending jobs and this driver's assigned jobs.
   const { bookings, loading, error: loadError, refresh } = useBookings();
   const { user } = useAuth();
   const [actionError, setActionError] = useState("");
@@ -188,6 +190,8 @@ const DriverHomePage = () => {
   const [myLocation, setMyLocation] = useState(null);
   const [gpsMessage, setGpsMessage] = useState("Waiting for GPS location…");
 
+  // The browser watches real GPS updates (also works with our GPS simulator).
+  // Only React can access navigator.geolocation; Express cannot access phone GPS.
   useEffect(() => {
     if (!navigator.geolocation) {
       setGpsMessage("This browser does not support location sharing.");
@@ -204,7 +208,10 @@ const DriverHomePage = () => {
     return () => navigator.geolocation.clearWatch(id);
   }, []);
 
-  // Share this logged-in driver's GPS through Express, not localStorage.
+  // GPS FLOW: watchPosition() -> myLocation -> updateLocation() -> Express.
+  // PATCH /api/bookings/:id/location saves the latest lat/lng in MongoDB.
+  // Customer's useBookings() later fetches that location for the map.
+  // Rate limiting to every ~20 sec protects the server from excessive requests.
   useEffect(() => {
     if (!myLocation || !user) return;
     const now = Date.now();
@@ -221,17 +228,32 @@ const DriverHomePage = () => {
 
   const expanded = bookings.find((b) => b.id === expandedId) || null;
 
+  // DRIVER ACTION FLOW:
+  // The buttons in BookingExpand() call this one function for all stages.
+  // "accepted" -> driver accepts; "at_pickup" -> arrived at pickup;
+  // "picked_up" -> package collected; "arrived" -> reached destination;
+  // "delivered" -> PIN verification, handled separately by Express.
   async function handleStatusChange(newStatus, reason, pin) {
     if (!expandedId || busy) return;
     setBusy(true);
     setActionError("");
     try {
       let result;
-      if (newStatus === "accepted") result = await bookingService.accept(expandedId);
-      else if (newStatus === "declined") result = await bookingService.decline(expandedId);
-      else if (newStatus === "cancelled") result = await bookingService.cancel(expandedId, reason);
-      else if (newStatus === "delivered") result = await bookingService.verifyDelivery(expandedId, pin);
-      else result = await bookingService.changeStatus(expandedId, newStatus);
+
+      // Pick the REST endpoint for the button the driver clicked.
+      if (newStatus === "accepted") {
+        result = await bookingService.accept(expandedId);
+      } else if (newStatus === "declined") {
+        result = await bookingService.decline(expandedId);
+      } else if (newStatus === "cancelled") {
+        result = await bookingService.cancel(expandedId, reason);
+      } else if (newStatus === "delivered") {
+        // Never compare the PIN in React! Express checks its secure hash.
+        result = await bookingService.verifyDelivery(expandedId, pin);
+      } else {
+        result = await bookingService.changeStatus(expandedId, newStatus);
+      }
+      // Read updated bookings from MongoDB so the UI displays the new status.
       await refresh();
       if (newStatus === "accepted") setActiveTab("active");
       if (["accepted", "declined", "cancelled", "delivered"].includes(newStatus)) setExpandedId(null);
@@ -244,6 +266,7 @@ const DriverHomePage = () => {
     } finally { setBusy(false); }
   }
 
+  // React only renders these lists; Express decides what driver may access.
   const availableBookings = bookings.filter(
     (b) => b.status === "pending"
   );

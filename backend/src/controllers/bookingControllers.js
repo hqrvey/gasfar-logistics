@@ -1,328 +1,718 @@
+/*
+  BOOKING CONTROLLER: THE BOOKING AND DELIVERY BUSINESS LOGIC
+
+  Example flow:
+  1. React calls POST /api/bookings with form data.
+  2. bookingRoutes.js runs requireAuth and checks role = customer.
+  3. Express runs createBooking(req, res) in THIS file.
+  4. Booking.create() uses the Booking Mongoose model to save MongoDB data.
+  5. res.json() sends the result back to React.
+
+  Each exported function below corresponds to one route in bookingRoutes.js.
+  `req` means the request FROM React; `res` means our response TO React.
+*/
+
 import { createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import Booking from "../models/Booking.js";
 import DriverProfile from "../models/DriverProfile.js";
 import { sendSMS } from "../services/smsService.js";
 
-const ACTIVE = ["accepted", "at_pickup", "picked_up", "arrived"];
-const NEXT = { accepted: "at_pickup", at_pickup: "picked_up", picked_up: "arrived" };
-const TIME_FIELDS = { at_pickup: "arrivedAtPickupAt", picked_up: "pickedUpAt", arrived: "arrivedAtDropoffAt" };
-const VEHICLE_NAMES = { motorcycle: "Motorcycle", sedan: "Sedan", suv: "SUV", pickup: "Pickup", l300: "L300" };
+// These are the statuses where a driver is actively working on a booking.
+const ACTIVE_STATUSES = ["accepted", "at_pickup", "picked_up", "arrived"];
 
-function validLocation(point) {
-  return point && typeof point.address === "string" && point.address.trim().length > 2 &&
-    Number.isFinite(point.lat) && point.lat >= -90 && point.lat <= 90 &&
-    Number.isFinite(point.lng) && point.lng >= -180 && point.lng <= 180;
+// Stable vehicle IDs saved in MongoDB; nice labels displayed in React.
+const VEHICLE_LABELS = {
+  motorcycle: "Motorcycle",
+  sedan: "Sedan",
+  suv: "SUV",
+  pickup: "Pickup",
+  l300: "L300",
+};
+
+// Check that a pickup/drop-off object contains a readable address and GPS.
+function validLocation(location) {
+  if (!location) return false;
+  if (typeof location.address !== "string") return false;
+  if (location.address.trim().length < 3) return false;
+  if (!Number.isFinite(location.lat) || location.lat < -90 || location.lat > 90) return false;
+  if (!Number.isFinite(location.lng) || location.lng < -180 || location.lng > 180) return false;
+  return true;
 }
 
+// Convert 09171234567, 9171234567 or +639171234567 into +639171234567.
 function normalizePhone(value) {
-  let digits = String(value || "").replace(/\D/g, "");
-  if (digits.startsWith("63")) digits = digits.slice(2);
-  if (digits.startsWith("0")) digits = digits.slice(1);
-  return /^9\d{9}$/.test(digits) ? `+63${digits}` : null;
+  let digits = String(value || "").replace(/\D/g, ""); // Remove non-digits.
+  if (digits.startsWith("63")) digits = digits.slice(2);  // Remove country prefix.
+  if (digits.startsWith("0")) digits = digits.slice(1);   // Remove local prefix.
+  if (!/^9\d{9}$/.test(digits)) return null;              // Must be a PH mobile number.
+  return "+63" + digits;
 }
 
-// A single public booking shape keeps the existing React pages readable.
-// Sensitive fields (such as the PIN hash) are never included.
-function showBooking(b, viewer = null) {
-  const hidePrivateContacts = viewer?.role === "driver" && b.status === "pending";
-  const scheduleDate = b.schedule?.scheduledAt;
-  // Convert stored UTC timestamps back to the Philippine date/time used by the form.
-  const localSchedule = scheduleDate ? new Date(scheduleDate.getTime() + 8 * 60 * 60 * 1000).toISOString() : null;
+// React expects a particular JSON shape, not a raw MongoDB document.
+// We also keep the secret delivery PIN hash out of the response.
+function showBooking(booking, viewer) {
+  // Unassigned requests are visible to eligible drivers, but private phone
+  // numbers should only be shown after a driver has accepted the booking.
+  let hideContact = false;
+  if (viewer && viewer.role === "driver" && booking.status === "pending") {
+    hideContact = true;
+  }
+
+  // The booking form uses Philippine local dates. MongoDB stores absolute UTC dates.
+  let scheduleDate = "";
+  let scheduleTime = "";
+  if (booking.schedule && booking.schedule.scheduledAt) {
+    const date = booking.schedule.scheduledAt;
+    const phDate = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+    const iso = phDate.toISOString();
+    scheduleDate = iso.slice(0, 10);  // YYYY-MM-DD
+    scheduleTime = iso.slice(11, 16); // HH:MM
+  }
+
+  // Convert the payment code into the label used by the existing React pages.
+  let paymentMethod = "Cash";
+  if (booking.payment.method === "gcash") paymentMethod = "GCash";
+  if (booking.payment.method === "maya") paymentMethod = "Maya";
+
+  const items = booking.packageDetails.itemTypes || [];
+  const quantity = booking.packageDetails.quantity || 1;
+  const pricePesos = booking.pricing.feeCentavos / 100;
+
+  // ObjectIds are special MongoDB values. String() converts them for JSON/React.
+  const customerId = String(booking.customerId);
+  let driverId = null;
+  if (booking.driverId) driverId = String(booking.driverId);
+
+  // .map() creates a new array without changing the original MongoDB array.
+  // These loops could also be written using for...of; map is common React JS.
+  const declinedBy = (booking.declinedBy || []).map((id) => String(id));
+  const statusHistory = (booking.statusHistory || []).map((event) => {
+    return { status: event.status, at: event.at };
+  });
+
+  // Fields below intentionally keep the names required by the current frontend.
   return {
-    id: b.bookingCode,
-    status: b.status,
-    pickup: b.pickup,
-    dropoff: b.dropoff,
-    customerName: b.customerName,
-    customerId: String(b.customerId),
-    recipientName: b.recipient?.name,
-    recipientPhone: hidePrivateContacts ? "" : b.recipient?.phone,
-    recipientUnit: b.recipient?.unit,
-    contactNumber: hidePrivateContacts ? "" : b.customerPhone,
-    vehicleType: VEHICLE_NAMES[b.vehicleType] || b.vehicleType,
-    vehicleTypeId: b.vehicleType,
-    deliveryType: b.deliveryType,
-    itemTypes: b.packageDetails?.itemTypes || [],
-    itemDetails: `${(b.packageDetails?.itemTypes || []).join(", ")} · Qty: ${b.packageDetails?.quantity || 1}`,
-    quantity: b.packageDetails?.quantity,
-    itemWeight: b.packageDetails?.itemWeight,
-    handlingInstructions: b.packageDetails?.handlingInstructions,
-    notesToDriver: b.packageDetails?.notesToDriver,
-    scheduleType: b.schedule?.type,
-    scheduleDate: localSchedule ? localSchedule.slice(0, 10) : "",
-    scheduleTime: localSchedule ? localSchedule.slice(11, 16) : "",
-    paymentMethod: b.payment?.method === "gcash" ? "GCash" : b.payment?.method === "maya" ? "Maya" : "Cash",
-    paymentSide: b.payment?.payer,
-    paymentStatus: b.payment?.status,
-    price: `₱${(b.pricing.feeCentavos / 100).toLocaleString("en-PH")}`,
-    feeCentavos: b.pricing.feeCentavos,
-    driver: b.driver?.name ? b.driver : null,
-    driverId: b.driverId ? String(b.driverId) : null,
-    driverLocation: b.driverLocation,
-    locationUpdatedAt: b.locationUpdatedAt?.getTime() || null,
-    declinedBy: (b.declinedBy || []).map(String),
-    statusHistory: (b.statusHistory || []).map((event) => ({ status: event.status, at: event.at })),
-    bookedAt: b.createdAt?.toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }),
-    completedAt: b.deliveredAt?.toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }),
-    cancelledAt: b.cancelledAt?.toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }),
-    cancelReason: b.cancelReason,
-    cancelledBy: b.cancelledBy,
+    id: booking.bookingCode,
+    status: booking.status,
+    pickup: booking.pickup,
+    dropoff: booking.dropoff,
+    customerId: customerId,
+    customerName: booking.customerName,
+    contactNumber: hideContact ? "" : booking.customerPhone,
+    recipientName: booking.recipient.name,
+    recipientPhone: hideContact ? "" : booking.recipient.phone,
+    recipientUnit: booking.recipient.unit,
+    vehicleType: VEHICLE_LABELS[booking.vehicleType] || booking.vehicleType,
+    vehicleTypeId: booking.vehicleType,
+    deliveryType: booking.deliveryType,
+    itemTypes: items,
+    itemDetails: items.join(", ") + " · Qty: " + quantity,
+    quantity: quantity,
+    itemWeight: booking.packageDetails.itemWeight,
+    handlingInstructions: booking.packageDetails.handlingInstructions,
+    notesToDriver: booking.packageDetails.notesToDriver,
+    scheduleType: booking.schedule.type,
+    scheduleDate: scheduleDate,
+    scheduleTime: scheduleTime,
+    paymentMethod: paymentMethod,
+    paymentSide: booking.payment.payer,
+    paymentStatus: booking.payment.status,
+    price: "₱" + pricePesos.toLocaleString("en-PH"),
+    feeCentavos: booking.pricing.feeCentavos,
+    driver: booking.driver && booking.driver.name ? booking.driver : null,
+    driverId: driverId,
+    driverLocation: booking.driverLocation,
+    locationUpdatedAt: booking.locationUpdatedAt ? booking.locationUpdatedAt.getTime() : null,
+    declinedBy: declinedBy,
+    statusHistory: statusHistory,
+    bookedAt: booking.createdAt ? booking.createdAt.toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }) : "",
+    completedAt: booking.deliveredAt ? booking.deliveredAt.toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }) : "",
+    cancelledAt: booking.cancelledAt ? booking.cancelledAt.toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }) : "",
+    cancelReason: booking.cancelReason,
+    cancelledBy: booking.cancelledBy,
   };
 }
 
-function findBooking(id) {
-  // Lookup by public booking code; the MongoDB _id is not exposed in the URL.
-  return Booking.findOne({ bookingCode: id });
-}
-
+// Only send a booking to someone who has permission to read it.
 function canView(booking, user) {
-  return user.role === "admin" ||
-    (user.role === "customer" && String(booking.customerId) === String(user._id)) ||
-    (user.role === "driver" && String(booking.driverId) === String(user._id));
+  if (user.role === "admin") return true;
+  if (user.role === "customer") return String(booking.customerId) === String(user._id);
+  if (user.role === "driver") return String(booking.driverId) === String(user._id);
+  return false;
 }
 
-// Backend calculates distance and pricing; never trust a price submitted by React.
-async function routePrice(pickup, dropoff) {
+// Call Geoapify FROM the backend to calculate the authoritative delivery price.
+async function calculateRoutePrice(pickup, dropoff) {
   const key = process.env.GEOAPIFY_API_KEY;
-  if (!key) throw Object.assign(new Error("Set GEOAPIFY_API_KEY in backend/.env before creating bookings."), { status: 503 });
-  const url = new URL("https://api.geoapify.com/v1/routing");
-  url.searchParams.set("waypoints", `${pickup.lat},${pickup.lng}|${dropoff.lat},${dropoff.lng}`);
-  url.searchParams.set("mode", "drive");
-  url.searchParams.set("apiKey", key);
-  let response;
-  try { response = await fetch(url, { signal: AbortSignal.timeout(12000) }); }
-  catch { throw Object.assign(new Error("Could not calculate delivery price. Try again."), { status: 502 }); }
-  if (!response.ok) throw Object.assign(new Error("Routing service unavailable. Try again."), { status: 502 });
-  const data = await response.json();
-  const route = data.features?.[0]?.properties;
-  if (!Number.isFinite(route?.distance) || !Number.isFinite(route?.time)) {
-    throw Object.assign(new Error("No driving route found for these locations."), { status: 400 });
+  if (!key) {
+    const error = new Error("Set GEOAPIFY_API_KEY in backend/.env before booking.");
+    error.status = 503;
+    throw error;
   }
-  const distanceKm = Math.round(route.distance / 100) / 10;
-  const durationMins = Math.max(1, Math.ceil(route.time / 60));
+
+  // The waypoints parameter is written as LAT,LNG|LAT,LNG.
+  // encodeURIComponent() makes the | character safe to put in a URL.
+  const points = pickup.lat + "," + pickup.lng + "|" + dropoff.lat + "," + dropoff.lng;
+  const url = "https://api.geoapify.com/v1/routing?waypoints=" +
+    encodeURIComponent(points) + "&mode=drive&apiKey=" + encodeURIComponent(key);
+
+  let response;
+  try {
+    // `await` waits for a Promise. AbortSignal.timeout prevents waiting forever.
+    response = await fetch(url, { signal: AbortSignal.timeout(12000) });
+  } catch (error) {
+    const problem = new Error("Could not contact the route service. Please try again.");
+    problem.status = 502;
+    throw problem;
+  }
+
+  if (!response.ok) {
+    const error = new Error("Routing service unavailable. Try again.");
+    error.status = 502;
+    throw error;
+  }
+
+  const data = await response.json(); // Convert Geoapify JSON response into JS data.
+  const firstRoute = data.features && data.features[0];
+  const properties = firstRoute && firstRoute.properties;
+  if (!properties || !Number.isFinite(properties.distance) || !Number.isFinite(properties.time)) {
+    const error = new Error("No driving route was found for those locations.");
+    error.status = 400;
+    throw error;
+  }
+
+  const distanceKm = Math.round(properties.distance / 100) / 10;
+  const durationMins = Math.max(1, Math.ceil(properties.time / 60));
+  // Current prototype pricing: ₱50 base + ₱12 per kilometre.
   const feeCentavos = Math.round((50 + distanceKm * 12) * 100);
   return { distanceKm, durationMins, feeCentavos };
 }
 
-function pinHash(id, pin) {
-  return createHmac("sha256", process.env.OTP_SECRET).update(`${id}:${pin}`).digest("hex");
+// HMAC makes the four-digit PIN impossible to read directly from the database.
+// We must use the SAME formula when generating and checking the PIN.
+function hashPin(bookingCode, pin) {
+  const hmac = createHmac("sha256", process.env.OTP_SECRET);
+  hmac.update(bookingCode + ":" + pin);
+  return hmac.digest("hex");
 }
 
 async function sendDeliveryPin(booking, pin) {
-  // A development code may be logged only when explicitly enabled locally.
   if (process.env.NODE_ENV !== "production" && process.env.DEV_LOG_DELIVERY_PIN === "true") {
-    console.log(`[LOCAL TEST] Delivery PIN for ${booking.bookingCode}: ${pin}`);
+    console.log("[LOCAL TEST] Delivery PIN for " + booking.bookingCode + ": " + pin);
   }
-  await sendSMS(booking.recipient.phone, `GASFAR delivery PIN for ${booking.bookingCode}: ${pin}. Give it only when your package arrives. Expires in 15 minutes.`);
+  const message = "GASFAR delivery PIN for " + booking.bookingCode + ": " + pin +
+    ". Give it only when your package arrives. Expires in 15 minutes.";
+  await sendSMS(booking.recipient.phone, message);
 }
 
+// Give React a helpful HTTP status instead of sending raw database errors.
 function replyError(res, error) {
-  if (error.code === 11000) return res.status(409).json({ message: "Conflicting booking assignment or duplicate booking. Refresh and try again." });
-  if (error.status) return res.status(error.status).json({ message: error.message });
-  if (error.name === "ValidationError") return res.status(400).json({ message: Object.values(error.errors).map((e) => e.message).join("; ") });
+  if (error.code === 11000) {
+    return res.status(409).json({ message: "Booking conflict. Refresh and try again." });
+  }
+  if (error.status) {
+    return res.status(error.status).json({ message: error.message });
+  }
+  if (error.name === "ValidationError") {
+    return res.status(400).json({ message: error.message });
+  }
   console.error("Booking API:", error);
   return res.status(500).json({ message: "Unable to process booking. Try again." });
 }
 
+// ============================================================
+// 1. CUSTOMER CREATES A BOOKING: POST /api/bookings
+// ============================================================
 export async function createBooking(req, res) {
   try {
-    const b = req.body || {};
-    if (!validLocation(b.pickup) || !validLocation(b.dropoff)) return res.status(400).json({ message: "Valid pickup and drop-off locations are required." });
-    if (!["motorcycle", "sedan", "suv", "pickup", "l300"].includes(b.vehicleType) ||
-        !["regular", "priority"].includes(b.deliveryType)) return res.status(400).json({ message: "Select a valid vehicle and delivery type." });
-    const phone = normalizePhone(b.recipientPhone);
-    if (!String(b.recipientName || "").trim() || !phone) return res.status(400).json({ message: "Recipient name and valid Philippine mobile number are required." });
-    if (!Array.isArray(b.itemTypes) || !b.itemTypes.length || b.itemTypes.some((type) => typeof type !== "string" || type.length > 50) ||
-        !Number.isInteger(b.quantity) || b.quantity < 1 || b.quantity > 1000) return res.status(400).json({ message: "Choose package items and a valid quantity." });
-    if (!["cash", "gcash", "maya"].includes(b.paymentMethod) || !["sender", "recipient"].includes(b.paymentSide)) return res.status(400).json({ message: "Choose a payment method and payer." });
-    if (!["now", "scheduled"].includes(b.scheduleType)) return res.status(400).json({ message: "Choose a delivery schedule." });
+    // express.json() in server.js converts the React JSON into req.body.
+    const form = req.body || {};
+
+    if (!validLocation(form.pickup) || !validLocation(form.dropoff)) {
+      return res.status(400).json({ message: "Valid pickup and drop-off locations are required." });
+    }
+    if (!Object.keys(VEHICLE_LABELS).includes(form.vehicleType)) {
+      return res.status(400).json({ message: "Choose a valid vehicle." });
+    }
+    if (!["regular", "priority"].includes(form.deliveryType)) {
+      return res.status(400).json({ message: "Choose a valid delivery type." });
+    }
+
+    const recipientName = String(form.recipientName || "").trim();
+    const recipientPhone = normalizePhone(form.recipientPhone);
+    if (!recipientName || !recipientPhone) {
+      return res.status(400).json({ message: "Enter a recipient name and valid phone." });
+    }
+    if (!Array.isArray(form.itemTypes) || form.itemTypes.length === 0) {
+      return res.status(400).json({ message: "Choose at least one package category." });
+    }
+    for (const item of form.itemTypes) {
+      if (typeof item !== "string" || item.length > 50) {
+        return res.status(400).json({ message: "Invalid package category." });
+      }
+    }
+    if (!Number.isInteger(form.quantity) || form.quantity < 1 || form.quantity > 1000) {
+      return res.status(400).json({ message: "Enter a valid package quantity." });
+    }
+    if (!["cash", "gcash", "maya"].includes(form.paymentMethod)) {
+      return res.status(400).json({ message: "Choose a payment method." });
+    }
+    if (!["sender", "recipient"].includes(form.paymentSide)) {
+      return res.status(400).json({ message: "Choose who will pay." });
+    }
+    if (!["now", "scheduled"].includes(form.scheduleType)) {
+      return res.status(400).json({ message: "Choose a delivery schedule." });
+    }
+
     let scheduledAt = null;
-    if (b.scheduleType === "scheduled") {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(b.scheduleDate || "") || !/^\d{2}:\d{2}$/.test(b.scheduleTime || "")) {
+    if (form.scheduleType === "scheduled") {
+      // This date string includes the Philippine timezone (+08:00).
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(form.scheduleDate || "") ||
+          !/^\d{2}:\d{2}$/.test(form.scheduleTime || "")) {
         return res.status(400).json({ message: "Choose a valid pickup date and time." });
       }
-      scheduledAt = new Date(`${b.scheduleDate}T${b.scheduleTime}:00+08:00`);
-      if (Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()) return res.status(400).json({ message: "Choose a future pickup date and time." });
+      scheduledAt = new Date(form.scheduleDate + "T" + form.scheduleTime + ":00+08:00");
+      if (Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()) {
+        return res.status(400).json({ message: "Choose a future pickup date and time." });
+      }
     }
-    const pricing = await routePrice(b.pickup, b.dropoff);
-    const created = await Booking.create({
-      bookingCode: `ORD-${Date.now()}-${randomBytes(3).toString("hex").toUpperCase()}`,
+
+    // Never trust a price sent by the browser; the backend gets distance itself.
+    const pricing = await calculateRoutePrice(form.pickup, form.dropoff);
+    const bookingCode = "ORD-" + Date.now() + "-" + randomBytes(3).toString("hex").toUpperCase();
+    const now = new Date();
+
+    // .create() is approximately SQL INSERT: it validates Booking.js then saves.
+    const booking = await Booking.create({
+      bookingCode: bookingCode,
+      // req.user was found using the login cookie in authMiddleware.js.
       customerId: req.user._id,
-      customerName: `${req.user.firstName} ${req.user.lastName}`,
+      customerName: req.user.firstName + " " + req.user.lastName,
       customerPhone: req.user.phone,
-      pickup: b.pickup, dropoff: b.dropoff,
-      recipient: { name: b.recipientName.trim(), phone, unit: String(b.recipientUnit || "").trim() },
-      vehicleType: b.vehicleType, deliveryType: b.deliveryType,
-      schedule: { type: b.scheduleType, scheduledAt },
-      packageDetails: {
-        itemTypes: b.itemTypes, quantity: b.quantity,
-        itemWeight: String(b.itemWeight || ""),
-        handlingInstructions: Array.isArray(b.handlingInstructions) ? b.handlingInstructions : [],
-        notesToDriver: String(b.notesToDriver || ""),
+      pickup: form.pickup,
+      dropoff: form.dropoff,
+      recipient: {
+        name: recipientName,
+        phone: recipientPhone,
+        unit: String(form.recipientUnit || "").trim(),
       },
-      payment: { method: b.paymentMethod, payer: b.paymentSide, status: "unpaid" },
-      pricing,
-      statusHistory: [{ status: "pending", at: new Date(), by: req.user._id }],
+      vehicleType: form.vehicleType,
+      deliveryType: form.deliveryType,
+      schedule: { type: form.scheduleType, scheduledAt: scheduledAt },
+      packageDetails: {
+        itemTypes: form.itemTypes,
+        quantity: form.quantity,
+        itemWeight: String(form.itemWeight || ""),
+        handlingInstructions: Array.isArray(form.handlingInstructions) ? form.handlingInstructions : [],
+        notesToDriver: String(form.notesToDriver || ""),
+      },
+      payment: { method: form.paymentMethod, payer: form.paymentSide, status: "unpaid" },
+      pricing: pricing,
+      statusHistory: [{ status: "pending", at: now, by: req.user._id }],
     });
-    return res.status(201).json({ booking: showBooking(created) });
-  } catch (error) { return replyError(res, error); }
+
+    // HTTP 201 means Created. React reads response.booking.
+    return res.status(201).json({ booking: showBooking(booking, req.user) });
+  } catch (error) {
+    return replyError(res, error);
+  }
 }
 
+// ============================================================
+// 2. GET BOOKINGS: GET /api/bookings
+// ============================================================
 export async function getBookings(req, res) {
   try {
-    let filter;
-    if (req.user.role === "customer") filter = { customerId: req.user._id };
-    else if (req.user.role === "admin") filter = { bookingCode: { $exists: true } };
-    else {
-      const profile = await DriverProfile.findOne({ userId: req.user._id });
-      const vehicleType = profile?.vehicle?.type;
-      // Driver sees eligible unclaimed jobs plus their own past and active jobs.
-      filter = { $or: [
-        { driverId: req.user._id },
-        { status: "pending", driverId: null, vehicleType, declinedBy: { $ne: req.user._id },
-          $or: [{ "schedule.type": "now" }, { "schedule.scheduledAt": { $lte: new Date(Date.now() + 60 * 60 * 1000) } }] },
-      ] };
+    let bookings = [];
+
+    if (req.user.role === "customer") {
+      // .find() is approximately SELECT ... WHERE customerId = ...
+      bookings = await Booking.find({ customerId: req.user._id }).sort({ createdAt: -1 }).limit(200);
     }
-    const bookings = await Booking.find(filter).sort({ createdAt: -1 }).limit(200);
-    return res.json({ bookings: bookings.map((booking) => showBooking(booking, req.user)) });
-  } catch (error) { return replyError(res, error); }
+
+    if (req.user.role === "admin") {
+      bookings = await Booking.find({ bookingCode: { $exists: true } }).sort({ createdAt: -1 }).limit(200);
+    }
+
+    if (req.user.role === "driver") {
+      const profile = await DriverProfile.findOne({ userId: req.user._id });
+      if (!profile || profile.verificationStatus !== "approved") {
+        return res.status(403).json({ message: "Driver approval required." });
+      }
+
+      // Query A: all recent deliveries that this driver accepted.
+      const assigned = await Booking.find({ driverId: req.user._id }).sort({ createdAt: -1 }).limit(200);
+
+      // Query B: pending requests that need this driver's type of vehicle.
+      const pending = await Booking.find({
+        status: "pending",
+        driverId: null,
+        vehicleType: profile.vehicle.type,
+      }).sort({ createdAt: -1 }).limit(200);
+
+      // We filter the small pending list in JavaScript. This is easier to
+      // read than building one deeply nested MongoDB $or query.
+      const available = [];
+      const nextHour = Date.now() + 60 * 60 * 1000;
+      for (const booking of pending) {
+        const declinedIds = booking.declinedBy || [];
+        let alreadyDeclined = false;
+        for (const id of declinedIds) {
+          if (String(id) === String(req.user._id)) alreadyDeclined = true;
+        }
+        if (alreadyDeclined) continue; // Skip this request.
+
+        if (booking.schedule.type === "scheduled") {
+          if (!booking.schedule.scheduledAt) continue;
+          if (booking.schedule.scheduledAt.getTime() > nextHour) continue;
+        }
+        available.push(booking);
+      }
+      // Combine the two arrays without creating another database collection.
+      bookings = assigned.concat(available);
+      bookings.sort((a, b) => b.createdAt - a.createdAt);
+    }
+
+    // Return the same frontend JSON shape for all three roles.
+    const result = [];
+    for (const booking of bookings) {
+      result.push(showBooking(booking, req.user));
+    }
+    return res.json({ bookings: result });
+  } catch (error) {
+    return replyError(res, error);
+  }
 }
 
+// GET /api/bookings/:id, where :id is a public booking code.
 export async function getBooking(req, res) {
   try {
-    const booking = await findBooking(req.params.id);
+    const booking = await Booking.findOne({ bookingCode: req.params.id });
     if (!booking) return res.status(404).json({ message: "Booking not found." });
-    if (!canView(booking, req.user)) return res.status(403).json({ message: "You cannot view this booking." });
+    if (!canView(booking, req.user)) {
+      return res.status(403).json({ message: "You cannot view this booking." });
+    }
     return res.json({ booking: showBooking(booking, req.user) });
-  } catch (error) { return replyError(res, error); }
+  } catch (error) {
+    return replyError(res, error);
+  }
 }
 
+// ============================================================
+// 3. DRIVER ACCEPTS: PATCH /api/bookings/:id/accept
+// ============================================================
 export async function acceptBooking(req, res) {
   try {
     const profile = await DriverProfile.findOne({ userId: req.user._id });
-    if (!profile || profile.verificationStatus !== "approved") return res.status(403).json({ message: "Driver verification required." });
-    const busy = await Booking.exists({ driverId: req.user._id, status: { $in: ACTIVE } });
-    if (busy) return res.status(409).json({ message: "Finish your current delivery before accepting another." });
-    const booking = await Booking.findOneAndUpdate({
-      bookingCode: req.params.id, status: "pending", driverId: null,
-      vehicleType: profile.vehicle.type, declinedBy: { $ne: req.user._id },
-      $or: [{ "schedule.type": "now" }, { "schedule.scheduledAt": { $lte: new Date(Date.now() + 60 * 60 * 1000) } }],
-    }, {
-      $set: {
-        driverId: req.user._id, status: "accepted", acceptedAt: new Date(),
-        driver: { name: `${req.user.firstName} ${req.user.lastName}`, phone: req.user.phone,
-          plate: profile.vehicle.plateNumber, vehicleType: VEHICLE_NAMES[profile.vehicle.type] },
-      },
-      $push: { statusHistory: { status: "accepted", at: new Date(), by: req.user._id } },
-    }, { new: true, runValidators: true });
-    if (!booking) return res.status(409).json({ message: "Booking unavailable, already accepted, or vehicle type does not match." });
+    if (!profile || profile.verificationStatus !== "approved") {
+      return res.status(403).json({ message: "Driver verification required." });
+    }
+
+    // Only one active job per driver. `exists` only checks if any matching job exists.
+    const activeJob = await Booking.exists({
+      driverId: req.user._id,
+      status: { $in: ACTIVE_STATUSES }, // $in means "one of these values".
+    });
+    if (activeJob) return res.status(409).json({ message: "Finish your current delivery first." });
+
+    // Read the booking first: plain if-statements make eligibility easy to learn.
+    const candidate = await Booking.findOne({ bookingCode: req.params.id });
+    if (!candidate || candidate.status !== "pending" || candidate.driverId) {
+      return res.status(409).json({ message: "Booking is no longer available." });
+    }
+    if (candidate.vehicleType !== profile.vehicle.type) {
+      return res.status(409).json({ message: "This booking needs a different vehicle type." });
+    }
+    for (const id of candidate.declinedBy || []) {
+      if (String(id) === String(req.user._id)) {
+        return res.status(409).json({ message: "You already declined this booking." });
+      }
+    }
+    if (candidate.schedule.type === "scheduled") {
+      const nextHour = Date.now() + 60 * 60 * 1000;
+      if (!candidate.schedule.scheduledAt || candidate.schedule.scheduledAt.getTime() > nextHour) {
+        return res.status(409).json({ message: "This scheduled booking is not available yet." });
+      }
+    }
+
+    const now = new Date();
+    const driverInfo = {
+      name: req.user.firstName + " " + req.user.lastName,
+      phone: req.user.phone,
+      plate: profile.vehicle.plateNumber,
+      vehicleType: VEHICLE_LABELS[profile.vehicle.type],
+    };
+
+    // IMPORTANT EXCEPTION TO THE SIMPLE CODE RULE:
+    // We do NOT use candidate.status = "accepted"; await candidate.save() here.
+    // Two drivers may click Accept almost together. `findOneAndUpdate` is atomic:
+    // MongoDB CHECKS status:"pending" AND changes it in ONE operation.
+    // Only the first driver can match; the other receives a conflict response.
+    const booking = await Booking.findOneAndUpdate(
+      {
+        bookingCode: req.params.id,
+        status: "pending",
+        driverId: null,
+        vehicleType: profile.vehicle.type,
+        declinedBy: { $ne: req.user._id }, // $ne means this driver did NOT decline.
+      }, // FILTER (SQL WHERE); still safe if another request changes availability.
+      {
+        $set: { driverId: req.user._id, status: "accepted", acceptedAt: now, driver: driverInfo },
+        $push: { statusHistory: { status: "accepted", at: now, by: req.user._id } },
+      }, // UPDATE: $set changes fields; $push adds a history entry.
+      { new: true, runValidators: true } // Return the UPDATED document and validate the changes.
+    );
+
+    if (!booking) return res.status(409).json({ message: "Another driver already accepted this booking." });
+    // A MongoDB unique active-driver index is our final concurrency safeguard.
     return res.json({ booking: showBooking(booking, req.user) });
-  } catch (error) { return replyError(res, error); }
+  } catch (error) {
+    return replyError(res, error);
+  }
 }
 
+// Driver declines an available request but does NOT cancel the customer's booking.
 export async function declineBooking(req, res) {
   try {
-    const result = await Booking.updateOne({ bookingCode: req.params.id, status: "pending", driverId: null },
-      { $addToSet: { declinedBy: req.user._id } });
-    if (!result.matchedCount) return res.status(409).json({ message: "This booking is no longer available." });
+    // $addToSet adds the driver's ObjectId to the array only if not already there.
+    const result = await Booking.updateOne(
+      { bookingCode: req.params.id, status: "pending", driverId: null },
+      { $addToSet: { declinedBy: req.user._id } }
+    );
+    if (result.matchedCount === 0) return res.status(409).json({ message: "This booking is no longer available." });
     return res.json({ message: "Booking declined." });
-  } catch (error) { return replyError(res, error); }
+  } catch (error) {
+    return replyError(res, error);
+  }
 }
 
+// ============================================================
+// 4. DRIVER PROGRESSES THROUGH THE THREE MIDDLE STAGES
+// ============================================================
 export async function updateStatus(req, res) {
   try {
-    const next = req.body?.status;
-    const current = Object.keys(NEXT).find((status) => NEXT[status] === next);
-    if (!current) return res.status(400).json({ message: "Use the next delivery stage. Delivered requires PIN verification." });
+    const requested = req.body && req.body.status;
     const now = new Date();
-    const patch = { $set: { status: next, [TIME_FIELDS[next]]: now }, $push: { statusHistory: { status: next, at: now, by: req.user._id } } };
+    let previous = "";
+    const changes = { status: requested };
     let pin = null;
-    if (next === "arrived") {
+
+    // Explicit if statements show exactly which transition is permitted.
+    if (requested === "at_pickup") {
+      previous = "accepted";
+      changes.arrivedAtPickupAt = now;
+    } else if (requested === "picked_up") {
+      previous = "at_pickup";
+      changes.pickedUpAt = now;
+    } else if (requested === "arrived") {
+      previous = "picked_up";
+      changes.arrivedAtDropoffAt = now;
+      // Random code is sent to recipient through TextBee at drop-off arrival.
       pin = String(randomInt(1000, 10000));
+      changes.deliveryPinHash = hashPin(req.params.id, pin);
+      changes.pinExpiresAt = new Date(now.getTime() + 15 * 60 * 1000);
+      changes.pinAttempts = 0;
+      changes.pinSends = 1;
+      changes.pinLastSentAt = now;
+    } else {
+      return res.status(400).json({ message: "Use the next stage; delivered requires PIN verification." });
     }
-    const booking = await Booking.findOneAndUpdate({ bookingCode: req.params.id, driverId: req.user._id, status: current }, {
-      ...patch,
-      $set: {
-        ...patch.$set,
-        ...(pin ? { deliveryPinHash: pinHash(req.params.id, pin), pinExpiresAt: new Date(now.getTime() + 15 * 60 * 1000), pinAttempts: 0, pinSends: 1, pinLastSentAt: now } : {}),
+
+    // Atomic filter prevents skipping/repeating stages even with two requests.
+    const booking = await Booking.findOneAndUpdate(
+      { bookingCode: req.params.id, driverId: req.user._id, status: previous },
+      {
+        $set: changes,
+        $push: { statusHistory: { status: requested, at: now, by: req.user._id } },
       },
-    }, { new: true, runValidators: true });
-    if (!booking) return res.status(409).json({ message: "Booking is not assigned to you or this stage is no longer available." });
+      { new: true, runValidators: true }
+    );
+    if (!booking) {
+      return res.status(409).json({ message: "Booking not assigned to you or stage changed already." });
+    }
+
     let smsSent = true;
     if (pin) {
-      try { await sendDeliveryPin(booking, pin); }
-      catch (error) { smsSent = false; console.error("Delivery PIN SMS error:", error.message); }
+      try {
+        await sendDeliveryPin(booking, pin);
+      } catch (error) {
+        smsSent = false;
+        console.error("Delivery PIN SMS:", error.message);
+      }
     }
-    return res.json({ booking: showBooking(booking), smsSent,
-      message: pin && !smsSent ? "Arrived at drop-off. SMS failed; try Resend PIN." : "Delivery stage updated." });
-  } catch (error) { return replyError(res, error); }
+
+    let message = "Delivery stage updated.";
+    if (pin && !smsSent) message = "Arrived at drop-off. SMS failed; try Resend PIN.";
+    return res.json({ booking: showBooking(booking, req.user), smsSent: smsSent, message: message });
+  } catch (error) {
+    return replyError(res, error);
+  }
 }
 
+// ============================================================
+// 5. RESEND PIN: POST /api/bookings/:id/resend-pin
+// ============================================================
 export async function resendDeliveryPin(req, res) {
   try {
     const now = new Date();
-    // Issue a new code (we store only its hash), with a 60-second cooldown and up to 4 sends.
+    const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
     const pin = String(randomInt(1000, 10000));
-    const booking = await Booking.findOneAndUpdate({
-      bookingCode: req.params.id, driverId: req.user._id, status: "arrived",
-      pinSends: { $lt: 4 }, pinLastSentAt: { $lte: new Date(now.getTime() - 60 * 1000) },
-    }, { $set: { deliveryPinHash: pinHash(req.params.id, pin), pinExpiresAt: new Date(now.getTime() + 15 * 60 * 1000), pinAttempts: 0, pinLastSentAt: now }, $inc: { pinSends: 1 } }, { new: true });
-    if (!booking) return res.status(429).json({ message: "PIN can't be resent yet, or the send limit has been reached." });
-    try { await sendDeliveryPin(booking, pin); }
-    catch (error) { console.error("Resend PIN error:", error.message); return res.status(502).json({ message: "TextBee could not send the PIN. Try again later." }); }
-    return res.json({ message: "A new delivery PIN was sent to the recipient." });
-  } catch (error) { return replyError(res, error); }
+
+    // The 60-second wait and four-send limit need one atomic DB update.
+    // Otherwise two rapid clicks could both pass a separate check and send SMS.
+    const booking = await Booking.findOneAndUpdate(
+      {
+        bookingCode: req.params.id,
+        driverId: req.user._id,
+        status: "arrived",
+        pinSends: { $lt: 4 }, // $lt = less than four sends.
+        pinLastSentAt: { $lte: oneMinuteAgo }, // $lte = at or before one minute ago.
+      },
+      {
+        $set: {
+          deliveryPinHash: hashPin(req.params.id, pin),
+          pinExpiresAt: new Date(now.getTime() + 15 * 60 * 1000),
+          pinAttempts: 0,
+          pinLastSentAt: now,
+        },
+        $inc: { pinSends: 1 }, // $inc adds one to the existing number.
+      },
+      { new: true }
+    );
+
+    if (!booking) return res.status(429).json({ message: "PIN cannot be resent yet or send limit reached." });
+
+    try {
+      await sendDeliveryPin(booking, pin);
+    } catch (error) {
+      console.error("Resend PIN:", error.message);
+      return res.status(502).json({ message: "TextBee could not send PIN. Try again later." });
+    }
+    return res.json({ message: "A new PIN was sent to the recipient." });
+  } catch (error) {
+    return replyError(res, error);
+  }
 }
 
+// ============================================================
+// 6. CONFIRM DELIVERY PIN: POST /api/bookings/:id/verify-delivery
+// ============================================================
 export async function verifyDelivery(req, res) {
   try {
-    const pin = String(req.body?.pin || "");
-    if (!/^\d{4}$/.test(pin)) return res.status(400).json({ message: "Enter the 4-digit recipient PIN." });
-    const b = await Booking.findOneAndUpdate({
-      bookingCode: req.params.id, driverId: req.user._id, status: "arrived",
-      pinExpiresAt: { $gt: new Date() }, pinAttempts: { $lt: 5 },
-    }, { $inc: { pinAttempts: 1 } }, { new: true }).select("+deliveryPinHash +pinExpiresAt +pinAttempts");
-    if (!b) return res.status(409).json({ message: "PIN expired, too many attempts, or delivery is not ready. Request a new PIN." });
-    const expected = Buffer.from(b.deliveryPinHash || "", "hex");
-    const actual = Buffer.from(pinHash(b.bookingCode, pin), "hex");
-    if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return res.status(400).json({ message: "Incorrect delivery PIN." });
+    const pin = String((req.body && req.body.pin) || "");
+    if (!/^\d{4}$/.test(pin)) return res.status(400).json({ message: "Enter the four-digit recipient PIN." });
+
+    // IMPORTANT: count the attempt ATOMICALLY before comparing PINs.
+    // $gt = greater than current time; $lt = fewer than five attempts.
+    // .select("+...") includes secret fields normally hidden by Booking.js.
+    const booking = await Booking.findOneAndUpdate(
+      {
+        bookingCode: req.params.id,
+        driverId: req.user._id,
+        status: "arrived",
+        pinExpiresAt: { $gt: new Date() },
+        pinAttempts: { $lt: 5 },
+      },
+      { $inc: { pinAttempts: 1 } },
+      { new: true }
+    ).select("+deliveryPinHash +pinExpiresAt +pinAttempts");
+
+    if (!booking) return res.status(409).json({ message: "PIN expired or attempts exhausted. Request a new PIN." });
+
+    // Compare HMAC hashes rather than reading a plaintext PIN from MongoDB.
+    const storedHash = Buffer.from(booking.deliveryPinHash || "", "hex");
+    const enteredHash = Buffer.from(hashPin(booking.bookingCode, pin), "hex");
+    // timingSafeEqual helps avoid leaking hints about the correct secret.
+    let correct = false;
+    if (storedHash.length === enteredHash.length) {
+      correct = timingSafeEqual(storedHash, enteredHash);
+    }
+    if (!correct) return res.status(400).json({ message: "Incorrect delivery PIN." });
+
     const now = new Date();
-    const completed = await Booking.findOneAndUpdate({ _id: b._id, status: "arrived", driverId: req.user._id }, {
-      $set: { status: "delivered", deliveredAt: now, driverLocation: null, locationUpdatedAt: null },
-      $unset: { deliveryPinHash: "", pinExpiresAt: "", pinAttempts: "", pinSends: "", pinLastSentAt: "" },
-      $push: { statusHistory: { status: "delivered", at: now, by: req.user._id } },
-    }, { new: true });
+    // Atomic completion prevents a second click from finishing twice.
+    const completed = await Booking.findOneAndUpdate(
+      { _id: booking._id, status: "arrived", driverId: req.user._id },
+      {
+        $set: { status: "delivered", deliveredAt: now, driverLocation: null, locationUpdatedAt: null },
+        $unset: { deliveryPinHash: "", pinExpiresAt: "", pinAttempts: "", pinSends: "", pinLastSentAt: "" },
+        $push: { statusHistory: { status: "delivered", at: now, by: req.user._id } },
+      },
+      { new: true }
+    );
     if (!completed) return res.status(409).json({ message: "Delivery already completed or changed." });
-    return res.json({ booking: showBooking(completed), message: "Delivery completed successfully." });
-  } catch (error) { return replyError(res, error); }
+    return res.json({ booking: showBooking(completed, req.user), message: "Delivery completed successfully." });
+  } catch (error) {
+    return replyError(res, error);
+  }
 }
 
+// ============================================================
+// 7. CUSTOMER/DRIVER CANCELLATION: PATCH /api/bookings/:id/cancel
+// ============================================================
 export async function cancelBooking(req, res) {
   try {
-    const role = req.user.role;
-    const allowed = role === "customer" ? ["pending"] : ["accepted", "at_pickup"];
-    const reason = String(req.body?.reason || "").trim().slice(0, 300);
-    if (!reason) return res.status(400).json({ message: "Please select a cancellation reason." });
-    const owner = role === "customer" ? { customerId: req.user._id } : { driverId: req.user._id };
+    const role = req.user.role; // Always from authenticated session, not React JSON.
+    const reason = String((req.body && req.body.reason) || "").trim().slice(0, 300);
+    if (!reason) return res.status(400).json({ message: "Choose a cancellation reason." });
+
+    // Current policy in this uploaded project:
+    // customer: only pending; driver: only accepted/at_pickup.
+    // NOTE: Driver cancellation currently CANCELS the booking; it does NOT
+    // return it to pending for reassignment. That is a separate feature change.
+    let filter = { bookingCode: req.params.id };
+    if (role === "customer") {
+      filter.customerId = req.user._id;
+      filter.status = "pending";
+    } else {
+      filter.driverId = req.user._id;
+      filter.status = { $in: ["accepted", "at_pickup"] };
+    }
+
     const now = new Date();
-    const booking = await Booking.findOneAndUpdate({ bookingCode: req.params.id, ...owner, status: { $in: allowed } }, {
-      $set: { status: "cancelled", cancelledAt: now, cancelledBy: role, cancelReason: reason, driverLocation: null, locationUpdatedAt: null },
-      $push: { statusHistory: { status: "cancelled", at: now, by: req.user._id } },
-    }, { new: true });
-    if (!booking) return res.status(409).json({ message: "This booking can no longer be cancelled here. Contact support." });
+    const booking = await Booking.findOneAndUpdate(
+      filter,
+      {
+        $set: {
+          status: "cancelled", cancelledAt: now, cancelledBy: role,
+          cancelReason: reason, driverLocation: null, locationUpdatedAt: null,
+        },
+        $push: { statusHistory: { status: "cancelled", at: now, by: req.user._id } },
+      },
+      { new: true }
+    );
+
+    if (!booking) return res.status(409).json({ message: "This booking can no longer be cancelled here." });
     return res.json({ booking: showBooking(booking, req.user) });
-  } catch (error) { return replyError(res, error); }
+  } catch (error) {
+    return replyError(res, error);
+  }
 }
 
+// ============================================================
+// 8. DRIVER GPS UPDATE: PATCH /api/bookings/:id/location
+// ============================================================
 export async function updateDriverLocation(req, res) {
   try {
-    const lat = Number(req.body?.lat), lng = Number(req.body?.lng);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return res.status(400).json({ message: "Invalid GPS coordinates." });
-    const now = new Date();
-    const booking = await Booking.updateOne({ bookingCode: req.params.id, driverId: req.user._id, status: { $in: ACTIVE } }, {
-      $set: { driverLocation: { lat, lng, address: "Driver GPS location" }, locationUpdatedAt: now },
-    });
-    if (!booking.matchedCount) return res.status(409).json({ message: "No active assigned booking to update." });
+    // Number() converts JSON coordinate values to numbers.
+    const lat = Number(req.body && req.body.lat);
+    const lng = Number(req.body && req.body.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return res.status(400).json({ message: "Invalid GPS coordinates." });
+    }
+
+    // .updateOne() updates the fields without needing a whole booking document.
+    // Only the assigned driver can change GPS while the status is active.
+    const result = await Booking.updateOne(
+      { bookingCode: req.params.id, driverId: req.user._id, status: { $in: ACTIVE_STATUSES } },
+      { $set: { driverLocation: { lat: lat, lng: lng, address: "Driver GPS location" }, locationUpdatedAt: new Date() } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(409).json({ message: "No active booking assigned to you." });
+    }
     return res.json({ message: "Location updated." });
-  } catch (error) { return replyError(res, error); }
+  } catch (error) {
+    return replyError(res, error);
+  }
 }

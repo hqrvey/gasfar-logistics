@@ -88,7 +88,8 @@ const PersonalInfoStep = ({ data, errors, onChange, role, onNext, onBack }) => (
   </>
 );
 
-// The server generates and verifies codes. There is no fixed mock OTP.
+// SIGNUP STEP 1: TextBee sends the server-generated SMS verification code.
+// The frontend never generates a code and never stores a verified PIN.
 const VerificationStep = ({ phone, onVerified, onBack, showToast }) => {
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
@@ -106,6 +107,7 @@ const VerificationStep = ({ phone, onVerified, onBack, showToast }) => {
     if (submitting) return;
     setSubmitting(true);
     try {
+      // POST /api/auth/send-code -> Express -> TextBee -> customer's phone.
       await authService.sendCode(phone);
       setSent(true);
       setCode("");
@@ -120,7 +122,9 @@ const VerificationStep = ({ phone, onVerified, onBack, showToast }) => {
     if (code.length !== 6) return showToast("Please enter the 6-digit code.");
     setSubmitting(true);
     try {
+      // POST /api/auth/verify-code checks the hash in MongoDB.
       const result = await authService.verifyCode(phone, code);
+      // Signed token proves to register() that this phone was verified.
       onVerified(result.verificationToken);
     } catch (error) { showToast(error.message); }
     finally { setSubmitting(false); }
@@ -301,6 +305,7 @@ const STEPS = SIGNUP_STEPS[role] || SIGNUP_STEPS.customer;
     if (submitting) return;
     setSubmitting(true);
     try {
+      // POST /api/auth/register: Express creates User and optional DriverProfile.
       await authService.register({
         ...data, role, verificationToken,
         phone: data.phone,

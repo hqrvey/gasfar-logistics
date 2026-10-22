@@ -35,6 +35,9 @@ const LoginForm = () => {
   const field = TAB_CONFIG[activeTab];
   const showToast = (message) => setToast((t) => ({ message, id: t.id + 1 }));
   const dismissToast = () => setToast((t) => ({ ...t, message: "" }));
+  // LOGIN FLOW: Form -> useAuth().login -> authService -> POST /api/auth/login.
+  // Express checks the password against MongoDB and sets an HttpOnly cookie.
+  // The returned user.role determines which dashboard React navigates to.
   async function handleSubmit(e) {
     e.preventDefault();
     if (!identifier.trim() || !password) {
@@ -43,6 +46,7 @@ const LoginForm = () => {
     }
     setSubmitting(true);
     try {
+      // "account" is safe user data returned by the Express controller.
       const account = await login(identifier, password, remember);
       const requestedPage = location.state?.from?.pathname;
       const belongsToRole =
