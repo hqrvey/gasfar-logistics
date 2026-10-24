@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { bookingService } from "../../services/bookingService.js";
+import { useAuth } from "../../context/AuthContext.jsx";
 import { ArrowLeft, Check, Star } from "lucide-react";
 import { FiPhone } from "react-icons/fi";
-import { useBookings } from "../../hooks/useBookings.js";
 import { groupOf, statusOf } from "../../utils/helpers.js";
 import { MapPicker } from "./MapComponents.jsx";
 import { RouteStrip } from "./BookingUI.jsx";
@@ -52,6 +53,7 @@ function UserReviewCard({ order, existingReview, onSubmit, readOnly = false }) {
   const [rating, setRating] = useState(existingReview?.rating || 0);
   const [comment, setComment] = useState(existingReview?.comment || "");
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   if (readOnly && !existingReview) {
     return (
@@ -108,15 +110,20 @@ function UserReviewCard({ order, existingReview, onSubmit, readOnly = false }) {
     );
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
+    // This is a real REST API request, not a simulated timer or localStorage.
     if (!rating || submitting) return;
     setSubmitting(true);
-
-    // Keep the prototype's short submission delay until the backend is ready.
-    setTimeout(() => {
-      onSubmit({ rating, comment: comment.trim() });
+    setSubmitError("");
+    try {
+      // onSubmit is passed down from OrderHistory, which calls bookingService.
+      await onSubmit({ rating: rating, comment: comment.trim() });
+    } catch (error) {
+      // Show backend errors (e.g. network problem or already reviewed).
+      setSubmitError(error.message);
+    } finally {
       setSubmitting(false);
-    }, 400);
+    }
   }
 
   return (
@@ -138,6 +145,7 @@ function UserReviewCard({ order, existingReview, onSubmit, readOnly = false }) {
         maxLength={300}
         onChange={(event) => setComment(event.target.value)}
       />
+      {submitError && <p role="alert" className="user-review-card__hint">{submitError}</p>}
       <div className="user-review-card__foot">
         <span className="user-review-card__hint">{comment.length}/300</span>
         <button
@@ -157,7 +165,7 @@ function UserReviewCard({ order, existingReview, onSubmit, readOnly = false }) {
 function HistoryCard({ order, role, onExpand }) {
   const personName = role === "driver"
     ? order.customerName
-    : order.driver?.name || order.driverName || "—";
+    : order.driver?.name || order.driverName || "No driver assigned";
   const personDetails = `${order.vehicleType} · ${order.bookedAt || order.timeDate}`;
 
   return (
@@ -174,10 +182,11 @@ function HistoryCard({ order, role, onExpand }) {
         </div>
       </div>
       <RouteStrip pickup={order.pickup} dropoff={order.dropoff} labels={false} />
-      {order.contactNumber && (
+      {/* The customer should see the DRIVER'S phone; the driver sees the CUSTOMER'S. */}
+      {(role === "driver" ? order.contactNumber : order.driver?.phone) && (
         <div className="order-card__row">
           <FiPhone size={12} />
-          <span>{order.contactNumber}</span>
+          <span>{role === "driver" ? order.contactNumber : order.driver.phone}</span>
         </div>
       )}
       <div className="order-card__footer">
@@ -201,8 +210,8 @@ function HistoryCard({ order, role, onExpand }) {
 function HistoryDetailsPanel({ order, role, onBack, review, onSubmitReview }) {
   const personName = role === "driver"
     ? order.customerName
-    : order.driver?.name || order.driverName;
-  const driverName = order.driver?.name || order.driverName;
+    : order.driver?.name || order.driverName || "No driver assigned";
+  const driverName = order.driver?.name || order.driverName || "No driver assigned";
 
   return (
     <div className="history-detail-panel">
@@ -232,7 +241,9 @@ function HistoryDetailsPanel({ order, role, onBack, review, onSubmitReview }) {
           <span className="detail-label">
             {role === "driver" ? "Customer Phone" : "Driver Phone"}
           </span>
-          <span className="detail-value">{order.contactNumber || "—"}</span>
+          <span className="detail-value">
+            {role === "driver" ? (order.contactNumber || "—") : (order.driver?.phone || "—")}
+          </span>
         </div>
         <div className="detail-row">
           <span className="detail-label">Price</span>
@@ -250,6 +261,18 @@ function HistoryDetailsPanel({ order, role, onBack, review, onSubmitReview }) {
             <span className="detail-value">{order.cancelledAt}</span>
           </div>
         )}
+        {order.status === "cancelled" && (
+          <div className="detail-row">
+            <span className="detail-label">Cancelled by</span>
+            <span className="detail-value">{order.cancelledBy || "—"}</span>
+          </div>
+        )}
+        {order.status === "cancelled" && (
+          <div className="detail-row">
+            <span className="detail-label">Reason</span>
+            <span className="detail-value">{order.cancelReason || "No reason recorded"}</span>
+          </div>
+        )}
       </div>
       {groupOf(order.status) === "completed" && (
         <UserReviewCard
@@ -263,20 +286,62 @@ function HistoryDetailsPanel({ order, role, onBack, review, onSubmitReview }) {
   );
 }
 
-// Shared by the user history page and the driver history page.
-export default function OrderHistory({ role, reviews = {}, onSubmitReview = () => {} }) {
+// One shared component is used by BOTH customer and driver history pages.
+export default function OrderHistory({ role }) {
   const isDriver = role === "driver";
-  const { bookings } = useBookings();
+  const { user } = useAuth(); // The logged-in account, supplied by AuthContext.
+
+  // React state: changing any of these values causes React to rerender the UI.
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("Completed");
   const [expanded, setExpanded] = useState(null);
+  const [reloadNumber, setReloadNumber] = useState(0);
 
-  // The REST API returns only the bookings this customer/driver may view.
-  const completedBookings = bookings.filter((booking) =>
-    ["delivered", "cancelled"].includes(booking.status)
-  );
-  const visibleBookings = completedBookings.filter(
+  // useEffect runs after the page appears (and again when reloadNumber changes).
+  // React -> bookingService.history() -> GET /api/bookings/history -> MongoDB.
+  useEffect(() => {
+    let stillHere = true;
+    async function loadHistory() {
+      setLoading(true);
+      setError("");
+      try {
+        const history = await bookingService.history();
+        if (stillHere) setBookings(history);
+      } catch (problem) {
+        if (stillHere) setError(problem.message);
+      } finally {
+        if (stillHere) setLoading(false);
+      }
+    }
+    if (user) {
+      loadHistory();
+    } else {
+      setBookings([]);
+      setLoading(false);
+    }
+    // Cleanup: ignore a request's response if the user leaves this page.
+    return () => { stillHere = false; };
+  }, [user?.id, reloadNumber]);
+
+  // Only delivered/cancelled bookings come from this endpoint.
+  // Choose the matching tab using the same groupOf() helper as before.
+  const visibleBookings = bookings.filter(
     (booking) => groupOf(booking.status) === activeTab.toLowerCase()
   );
+
+  // Customer submits stars -> Express saves review inside the Booking document.
+  // The driver will receive the same saved review when opening their history.
+  async function submitReview(bookingCode, payload) {
+    const result = await bookingService.review(bookingCode, payload.rating, payload.comment);
+    // Update the matching booking in React without refreshing the whole page.
+    setBookings((previous) => previous.map((booking) => {
+      if (booking.id === bookingCode) return result.booking;
+      return booking;
+    }));
+    setExpanded(result.booking);
+  }
 
   if (expanded) {
     return (
@@ -286,8 +351,8 @@ export default function OrderHistory({ role, reviews = {}, onSubmitReview = () =
             order={expanded}
             role={role}
             onBack={() => setExpanded(null)}
-            review={reviews[expanded.id]}
-            onSubmitReview={isDriver ? undefined : (payload) => onSubmitReview(expanded.id, payload)}
+            review={expanded.review}
+            onSubmitReview={isDriver ? undefined : (payload) => submitReview(expanded.id, payload)}
           />
         </aside>
         <section className="history-split__map">
@@ -320,7 +385,7 @@ export default function OrderHistory({ role, reviews = {}, onSubmitReview = () =
             >
               {tab}
               <span className="history-tab__count">
-                {completedBookings.filter(
+                {bookings.filter(
                   (booking) => groupOf(booking.status) === tab.toLowerCase()
                 ).length}
               </span>
@@ -328,7 +393,16 @@ export default function OrderHistory({ role, reviews = {}, onSubmitReview = () =
           ))}
         </div>
         <div className="order-list">
-          {visibleBookings.length === 0 ? (
+          {loading ? (
+            <div className="order-empty"><p>Loading your history…</p></div>
+          ) : error ? (
+            <div className="order-empty" role="alert">
+              <p>Unable to load history: {error}</p>
+              <button type="button" className="active-back-link" onClick={() => setReloadNumber(reloadNumber + 1)}>
+                Try again
+              </button>
+            </div>
+          ) : visibleBookings.length === 0 ? (
             <div className="order-empty">
               <p>No {activeTab.toLowerCase()} {isDriver ? "bookings" : "orders"}.</p>
             </div>

@@ -4,11 +4,11 @@ import OrderHistory from "../../components/common/OrderHistory.jsx";
 import { MOCK_NOTIFICATIONS_USER } from "../../data/demo/clientMockData.js";
 
 // Role-specific page: shared history UI stays in components/common.
-export default function OrderHistoryPage({ reviews, onSubmitReview }) {
+export default function OrderHistoryPage() {
   const { user } = useAuth();
   return (
     <UserLayout user={{ name: `${user?.firstName || ""} ${user?.lastName || ""}`.trim() }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
-      <OrderHistory role="customer" reviews={reviews} onSubmitReview={onSubmitReview} />
+      <OrderHistory role="customer" />
     </UserLayout>
   );
 }

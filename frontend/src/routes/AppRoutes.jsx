@@ -53,8 +53,6 @@ export default function AppRoutes({
   onSaveAddress,
   onUpdateAddress,
   onDeleteAddress,
-  reviews,
-  onSubmitReview,
 }) {
   return (
     <Routes>
@@ -68,7 +66,7 @@ export default function AppRoutes({
       <Route element={<ProtectedRoute allowedRole="customer" />}>
         <Route path={ROUTES.bookDelivery} element={<BookDeliveryPage savedAddresses={savedAddresses} onSaveAddress={onSaveAddress} />} />
         <Route path={ROUTES.activeDelivery} element={<ActiveDeliveryPage />} />
-        <Route path={ROUTES.history} element={<OrderHistoryPage reviews={reviews} onSubmitReview={onSubmitReview} />} />
+        <Route path={ROUTES.history} element={<OrderHistoryPage />} />
         <Route path={ROUTES.userProfile} element={<UserProfilePage savedAddresses={savedAddresses} onSaveAddress={onSaveAddress} onUpdateAddress={onUpdateAddress} onDeleteAddress={onDeleteAddress} />} />
         <Route path={ROUTES.userNotifications} element={<UserNotificationsPage />} />
       </Route>
@@ -76,7 +74,7 @@ export default function AppRoutes({
       {/* Driver pages */}
       <Route element={<ProtectedRoute allowedRole="driver" />}>
         <Route path={ROUTES.driverHome} element={<DriverHomePage />} />
-        <Route path={ROUTES.driverHistory} element={<DriverHistoryPage reviews={reviews} />} />
+        <Route path={ROUTES.driverHistory} element={<DriverHistoryPage />} />
         <Route path={ROUTES.driverProfile} element={<DriverProfilePage />} />
         <Route path={ROUTES.driverWallet} element={<DriverWalletPage />} />
         <Route path={ROUTES.driverNotifications} element={<DriverNotificationsPage />} />

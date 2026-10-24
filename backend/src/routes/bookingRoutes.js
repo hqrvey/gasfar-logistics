@@ -10,7 +10,7 @@
 import express from "express";
 import { requireAuth, allowRoles } from "../middleware/authMiddleware.js";
 import {
-  getBookings, getBooking, createBooking, acceptBooking, declineBooking,
+  getBookings, getBooking, getBookingHistory, submitBookingReview, createBooking, acceptBooking, declineBooking,
   updateStatus, verifyDelivery, resendDeliveryPin, cancelBooking, updateDriverLocation,
 } from "../controllers/bookingControllers.js";
 
@@ -22,6 +22,11 @@ router.use(requireAuth);
 // GET = read information; POST = create/submit; PATCH = change existing data.
 router.get("/", allowRoles("customer", "driver", "admin"), getBookings);
 router.post("/", allowRoles("customer"), createBooking);
+
+// GET /api/bookings/history returns only this logged-in person's finished jobs.
+// IMPORTANT: register /history BEFORE /:id, or Express may read "history"
+// as a booking code instead of matching our history route.
+router.get("/history", allowRoles("customer", "driver"), getBookingHistory);
 router.get("/:id", allowRoles("customer", "driver", "admin"), getBooking);
 
 // :id is a variable in the URL. For example, ORD-123 is in req.params.id.
@@ -34,5 +39,7 @@ router.patch("/:id/location", allowRoles("driver"), updateDriverLocation);
 router.post("/:id/verify-delivery", allowRoles("driver"), verifyDelivery);
 router.post("/:id/resend-pin", allowRoles("driver"), resendDeliveryPin);
 router.patch("/:id/cancel", allowRoles("customer", "driver"), cancelBooking);
+// POST /api/bookings/ORD-.../review: only the customer may submit stars.
+router.post("/:id/review", allowRoles("customer"), submitBookingReview);
 
 export default router;

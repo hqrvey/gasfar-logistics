@@ -6,8 +6,7 @@ import { InputField, PhoneInput, FileUpload, VehicleSelect } from "../../compone
 import { ProfileLayout, PhotoUploader, ChangePasswordTab, DeleteAccountTab } from "../../components/common/ProfileComponents.jsx";
 import AppHeader from "../../components/common/AppHeader.jsx";
 import { useBookings } from "../../hooks/useBookings.js";
-import { useReviews } from "../../hooks/useReviews.js";
-import { MOCK_DRIVER, MOCK_DRIVER_REVIEWS, MOCK_NOTIFICATIONS_DRIVER } from "../../data/demo/clientMockData.js";
+import { MOCK_DRIVER, MOCK_NOTIFICATIONS_DRIVER } from "../../data/demo/clientMockData.js";
 import { SqCard, Field } from "../../components/common/BookingUI.jsx";
 import { peso } from "../../utils/helpers.js";
 
@@ -18,24 +17,6 @@ const VEHICLES = [
   { id: "pickup", label: "Pickup", sub: "Up to 800 kg", Icon: Truck },
   { id: "l300", label: "L300", sub: "Up to 1,000 kg", Icon: Van },
 ];
-
-/* Random reviewer names (used when a review has no name) */
-const RANDOM_NAMES = [
-  "Maria Reyes", "Juan Dela Cruz", "Angela Santos", "Mark Villanueva",
-  "Katrina Bautista", "Joseph Mendoza", "Patricia Garcia", "Daniel Ramos",
-  "Jasmine Cruz", "Miguel Torres", "Bianca Aquino", "Carlo Navarro",
-  "Rhea Castillo", "Paolo Fernandez", "Liza Domingo", "Kevin Soriano",
-];
-
-/* Stable "random" pick — same seed always gives the same name */
-const pickName = (seed = "") => {
-  let hash = 0;
-  const str = String(seed);
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash * 31 + str.charCodeAt(i)) | 0;
-  }
-  return RANDOM_NAMES[Math.abs(hash) % RANDOM_NAMES.length];
-};
 
 /* ═══ Driver Profile ═══ */
 const ChangeVehicleModal = ({ current, onClose, onSubmit }) => {
@@ -100,7 +81,7 @@ const ChangeVehicleModal = ({ current, onClose, onSubmit }) => {
 
 const DriverStatsTab = ({ myReviews, avgRating }) => {
   const totalReviews = myReviews.length;
-  const allReviews = [...MOCK_DRIVER_REVIEWS, ...myReviews];
+  const allReviews = myReviews; // These now come from MongoDB, not demo data.
 
   const dist = [5, 4, 3, 2, 1].map((star) => ({
     star,
@@ -150,7 +131,7 @@ const DriverStatsTab = ({ myReviews, avgRating }) => {
           {recent.map((r, i) => (
             <div key={i} className="driver-stats__review">
               <p className="driver-stats__review-name">
-                {r.name || r.reviewer || r.userName || r.customerName || pickName(`${r.date}${r.comment}${r.rating}`)}
+                {r.name || r.customerName || "Customer"}
               </p>
               <div className="driver-stats__review-stars">
                 {[1, 2, 3, 4, 5].map((n) => (
@@ -185,33 +166,22 @@ const DriverProfilePage = () => {
 
   const { bookings } = useBookings();
   const { user } = useAuth();
-  const { reviews } = useReviews();
-
-  /* Real reviews mula sa users (localStorage) */
-  const myReviews = Object.entries(reviews)
-    .filter(([orderId]) => {
-      const b = bookings.find((x) => x.id === orderId);
-      return b?.driverId && b.driverId === user?.id;
-    })
-    .map(([orderId, r]) => {
-      const b = bookings.find((x) => x.id === orderId);
-      return {
-        ...r,
-        name:
-          r.name ||
-          b?.customer?.name ||
-          b?.customerName ||
-          b?.user?.name ||
-          pickName(orderId),
-      };
-    });
+  // The customer's review is now stored in booking.review inside MongoDB.
+  // GET /api/bookings returns the driver's own completed bookings and reviews.
+  // This also works across different browsers and different devices.
+  const myReviews = [];
+  for (const booking of bookings) {
+    if (booking.driverId === user?.id && booking.review) {
+      myReviews.push({ ...booking.review, name: booking.customerName });
+    }
+  }
 
   const completedTrips = bookings.filter(
     (b) => b.driverId === user?.id && ["delivered", "completed"].includes(b.status)
   ).length;
 
-  /* Combined avg — seed + real */
-  const allMyReviews = [...MOCK_DRIVER_REVIEWS, ...myReviews];
+  // Ratings should reflect real customer feedback, never demo ratings.
+  const allMyReviews = myReviews;
   const avgRating = allMyReviews.length > 0
     ? +(allMyReviews.reduce((s, r) => s + r.rating, 0) / allMyReviews.length).toFixed(1)
     : 0;
@@ -236,7 +206,7 @@ const DriverProfilePage = () => {
         <div className="profile-rating">
           <Star size={14} fill="#F47B20" color="#F47B20" />
           <span className="profile-rating__val">{avgRating.toFixed(1)}</span>
-          <span className="profile-rating__sub">· {MOCK_DRIVER.trips + completedTrips} trips</span>
+          <span className="profile-rating__sub">· {completedTrips} trips</span>
         </div>
       </div>
     </>

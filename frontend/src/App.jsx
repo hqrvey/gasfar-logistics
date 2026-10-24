@@ -1,7 +1,6 @@
 import AppRoutes from "./routes/AppRoutes.jsx";
 import { useCallback, useState } from "react";
 import { MOCK_SAVED_ADDRESSES } from "./data/demo/clientMockData.js";
-import { useReviews } from "./hooks/useReviews.js";
 
 // Shared saved-address state used by the user profile and booking pages.
 function useSavedAddresses() {
@@ -41,23 +40,12 @@ export default function App() {
     updateSavedAddress,
     deleteSavedAddress,
   } = useSavedAddresses();
-  const { reviews, setReview } = useReviews();
-
-  function submitReview(orderId, review) {
-    setReview(orderId, {
-      ...review,
-      date: new Date().toLocaleDateString("en-PH", { dateStyle: "medium" }),
-    });
-  }
-
   return (
     <AppRoutes
       savedAddresses={savedAddresses}
       onSaveAddress={addSavedAddress}
       onUpdateAddress={updateSavedAddress}
       onDeleteAddress={deleteSavedAddress}
-      reviews={reviews}
-      onSubmitReview={submitReview}
     />
   );
 }

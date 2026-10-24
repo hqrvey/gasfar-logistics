@@ -15,6 +15,21 @@ export const bookingService = {
     return result.bookings; // useBookings() saves this array into React state.
   },
 
+  // GET /api/bookings/history -> Express returns only this user's past bookings.
+  // It works for customer AND driver because the backend checks the login cookie.
+  async history() {
+    const result = await apiRequest("/bookings/history");
+    return result.bookings;
+  },
+
+  // POST /api/bookings/:id/review -> save the customer's stars in MongoDB.
+  review(id, rating, comment) {
+    return apiRequest(`${bookingUrl(id)}/review`, {
+      method: "POST",
+      body: JSON.stringify({ rating: rating, comment: comment }),
+    });
+  },
+
   // POST /api/bookings -> controller createBooking() -> new MongoDB document.
   create(details) {
     return apiRequest("/bookings", {

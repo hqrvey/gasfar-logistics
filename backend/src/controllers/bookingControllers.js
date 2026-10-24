@@ -130,6 +130,15 @@ function showBooking(booking, viewer) {
     cancelledAt: booking.cancelledAt ? booking.cancelledAt.toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }) : "",
     cancelReason: booking.cancelReason,
     cancelledBy: booking.cancelledBy,
+    // Never expose a raw database document to React. A review is visible to
+    // both the customer and assigned driver, but only after it has a rating.
+    review: booking.review && booking.review.rating ? {
+      rating: booking.review.rating,
+      comment: booking.review.comment || "",
+      date: booking.review.createdAt
+        ? booking.review.createdAt.toLocaleDateString("en-PH", { dateStyle: "medium", timeZone: "Asia/Manila" })
+        : "",
+    } : null,
   };
 }
 
@@ -379,6 +388,95 @@ export async function getBookings(req, res) {
       result.push(showBooking(booking, req.user));
     }
     return res.json({ bookings: result });
+  } catch (error) {
+    return replyError(res, error);
+  }
+}
+
+// ============================================================
+// BOOKING HISTORY: GET /api/bookings/history
+// ============================================================
+// Unlike GET /api/bookings, this endpoint returns FINISHED bookings only.
+// It is used by BOTH history pages; React doesn't talk to MongoDB directly.
+export async function getBookingHistory(req, res) {
+  try {
+    // Only completed and cancelled deliveries belong in history.
+    // $in means "the status is either delivered OR cancelled".
+    const filter = { status: { $in: ["delivered", "cancelled"] } };
+
+    // req.user is set by requireAuth() after reading the login cookie.
+    // Customers can read only bookings they created.
+    // Drivers can read only bookings assigned to them.
+    if (req.user.role === "customer") {
+      filter.customerId = req.user._id;
+    } else if (req.user.role === "driver") {
+      filter.driverId = req.user._id;
+    } else {
+      return res.status(403).json({ message: "Only customers and drivers have personal booking history." });
+    }
+
+    // Booking.find() asks MongoDB for all documents matching the filter.
+    // sort({ createdAt: -1 }) orders them newest first (-1 = descending).
+    // We intentionally do not use the normal active-bookings 200-item limit.
+    const bookings = await Booking.find(filter).sort({ createdAt: -1 });
+
+    // Convert each MongoDB document into the JSON format our React UI uses.
+    const history = [];
+    for (const booking of bookings) {
+      history.push(showBooking(booking, req.user));
+    }
+
+    // res.json sends HTTP 200 plus JSON: { bookings: [ ... ] }.
+    return res.json({ bookings: history });
+  } catch (error) {
+    return replyError(res, error);
+  }
+}
+
+// ============================================================
+// CUSTOMER SUBMITS A REVIEW: POST /api/bookings/:id/review
+// ============================================================
+// Store one 1-5-star review inside the completed booking document.
+export async function submitBookingReview(req, res) {
+  try {
+    const rating = req.body && req.body.rating;
+    const comment = String((req.body && req.body.comment) || "").trim();
+
+    // A star rating must be a whole number from 1 to 5.
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: "Choose a rating from 1 to 5 stars." });
+    }
+    if (comment.length > 300) {
+      return res.status(400).json({ message: "Review must be 300 characters or fewer." });
+    }
+
+    // Find the specific booking, using BOTH booking code and customer ID.
+    // This prevents a customer from reviewing somebody else's booking.
+    const booking = await Booking.findOne({
+      bookingCode: req.params.id,
+      customerId: req.user._id,
+    });
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found." });
+    }
+    if (booking.status !== "delivered") {
+      return res.status(409).json({ message: "You can review a booking only after delivery." });
+    }
+    if (booking.review && booking.review.rating) {
+      return res.status(409).json({ message: "You already reviewed this booking." });
+    }
+
+    // Ordinary Mongoose document assignment and .save(), as in a MERN tutorial.
+    // The review becomes part of the EXISTING booking in MongoDB.
+    booking.review = {
+      rating: rating,
+      comment: comment,
+      createdAt: new Date(),
+    };
+    await booking.save();
+
+    // The frontend immediately updates its history card from response.booking.
+    return res.status(201).json({ booking: showBooking(booking, req.user) });
   } catch (error) {
     return replyError(res, error);
   }

@@ -143,6 +143,17 @@ const bookingSchema = new mongoose.Schema(
       by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     }],
 
+    // CUSTOMER REVIEW (saved in the SAME booking document, not another collection).
+    // Example after a completed delivery:
+    // review: { rating: 5, comment: "Very helpful driver", createdAt: Date }
+    // A booking without a review has no rating yet.
+    // The controller permits reviews only for delivered bookings and their owner.
+    review: {
+      rating: { type: Number, min: 1, max: 5 },
+      comment: { type: String, maxlength: 300 },
+      createdAt: Date,
+    },
+
     // Individual timestamps make querying and generating reports simpler.
     // A bare `Date` field is shorthand for `{ type: Date }`.
     acceptedAt: Date,
