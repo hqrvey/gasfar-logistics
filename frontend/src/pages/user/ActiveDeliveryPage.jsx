@@ -56,7 +56,8 @@ const ActiveDeliveryListCard = ({ order, onOpen }) => {
     </button>
   );
 };
-const ActiveDeliveryTracking = ({ order, onBack, onHistory }) => {
+const ActiveDeliveryTracking = ({ order, onBack, onHistory, onCancel, pendingCancel, onUndo }) => {
+  const [showCancelModal, setShowCancelModal] = useState(false);
   const [pickupEta, setPickupEta] = useState(null);
   const [now, setNow] = useState(Date.now());
 
@@ -166,6 +167,13 @@ const ActiveDeliveryTracking = ({ order, onBack, onHistory }) => {
           </div>
         </div>
       </div>
+      {order.status === "accepted" && <div className="feature-panel">
+        {pendingCancel?.orderId === order.id ?
+          <p className="feature-notice">Cancellation scheduled in five seconds. <button onClick={onUndo}>Undo</button></p> :
+          <button className="btn-user-cancel" onClick={() => setShowCancelModal(true)}>Cancel before pickup</button>}
+      </div>}
+      {showCancelModal && <UserCancelOrderModal order={order} onClose={() => setShowCancelModal(false)}
+        onConfirm={async reason => { await onCancel(order.id, reason); setShowCancelModal(false); }} />}
       <div className="bd-map">
         <MapPicker
           viewOnly
@@ -205,7 +213,7 @@ const UserCancelOrderModal = ({ order, onConfirm, onClose }) => {
         <div className="modal-head"><h3>Cancel Booking</h3><button className="modal-close" onClick={onClose} aria-label="Close"><FiX size={18} /></button></div>
         <div className="modal-body">
           <div className="modal-form">
-            <div className="modal-notice"><TriangleAlert size={14} /><span>You're about to cancel <strong>{order.id}</strong>. No driver has been assigned yet, so there's no cancellation fee.</span></div>
+            <div className="modal-notice"><TriangleAlert size={14} /><span>You're about to cancel <strong>{order.id}</strong>. Your booking will be cancelled after a five-second undo window. The backend enforces any applicable rules.</span></div>
             <div className="input-group"><label className="input-label">Reason <span className="required">*</span></label><select className="field__input select-field" value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Select a reason…</option>{USER_CANCEL_REASONS.map((r) => (<option key={r.id} value={r.id}>{r.label}</option>))}</select></div>
             <Field label="Additional notes (optional)"><textarea className="field__textarea" placeholder="Anything else we should know?" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
           </div>
@@ -215,7 +223,7 @@ const UserCancelOrderModal = ({ order, onConfirm, onClose }) => {
     </div>
   );
 };
-const PendingDeliveryTracking = ({ order, onBack, onCancel = (...args) => {} }) => {
+const PendingDeliveryTracking = ({ order, onBack, onCancel = (...args) => {}, pendingCancel, onUndo }) => {
   const [showCancelModal, setShowCancelModal] = useState(false);
   return (
     <div className="bd-shell">
@@ -238,7 +246,7 @@ const PendingDeliveryTracking = ({ order, onBack, onCancel = (...args) => {} }) 
             <div className="active-details-row"><span className="active-details-row__label">Payment</span><span className="active-details-row__value">{order.paymentMethod}</span></div>
             <div className="active-details-row active-details-row--price"><span className="active-details-row__label">Price</span><span className="active-details-row__value active-details-row__value--price">{order.price}</span></div>
           </div>
-          <div className="active-actions"><button type="button" className="btn-user-cancel" onClick={() => setShowCancelModal(true)}><FiX size={14} /> Cancel Booking</button></div>
+          {pendingCancel && pendingCancel.orderId === order.id ? <div className="feature-notice">Cancellation will be submitted in 5 seconds. <button onClick={onUndo}>Undo cancellation</button></div> : <div className="active-actions"><button type="button" className="btn-user-cancel" onClick={() => setShowCancelModal(true)}><FiX size={14} /> Cancel Booking</button></div>}
         </div>
       </div>
       <div className="bd-map"><MapPicker viewOnly pickupCoords={order.pickup} dropoffCoords={order.dropoff} /></div>
@@ -255,6 +263,9 @@ const ActiveDeliveryPage = () => {
   const { bookings: orders, loading, error: loadError, refresh } = useBookings();
   const { user } = useAuth();
   const [actionError, setActionError] = useState("");
+  const [pendingCancel, setPendingCancel] = useState(null);
+  const cancelTimer = React.useRef(null);
+  useEffect(() => () => { if (cancelTimer.current) clearTimeout(cancelTimer.current); }, []);
   const [expandedId, setExpandedId] = useState(null);
   const [hoverId, setHoverId] = useState(null);
   const [tab, setTab] = useState("pending");
@@ -266,8 +277,13 @@ const ActiveDeliveryPage = () => {
 
   // Sends PATCH /api/bookings/:id/cancel; backend checks customer ownership.
   async function handleCancel(orderId, reason) {
-    setActionError("");
-    try {
+    // Delay the request for five seconds. Clicking Undo cancels this timer.
+    // Until the timer fires, MongoDB booking status stays unchanged.
+    setPendingCancel({ orderId, reason });
+    cancelTimer.current = setTimeout(async () => {
+      setPendingCancel(null);
+      setActionError("");
+      try {
       await bookingService.cancel(orderId, reason);
       // Fetch again so the cancelled booking disappears from active tracking.
       await refresh();
@@ -276,7 +292,8 @@ const ActiveDeliveryPage = () => {
     } catch (error) {
       setActionError(error.message);
       alert(error.message);
-    }
+      }
+    }, 5000);
   }
 
   if (loading) return <UserLayout hideFooter><div role="status" style={{ padding: 24 }}>Loading bookings…</div></UserLayout>;
@@ -297,12 +314,15 @@ const ActiveDeliveryPage = () => {
     return (
       <UserLayout user={{ name: `${user?.firstName || ""} ${user?.lastName || ""}`.trim() }} notifications={MOCK_NOTIFICATIONS_USER} hideFooter>
         {expandedOrder.status === "pending" ? (
-          <PendingDeliveryTracking order={expandedOrder} onBack={() => setExpandedId(null)} onCancel={handleCancel} />
+          <PendingDeliveryTracking order={expandedOrder} onBack={() => setExpandedId(null)} onCancel={handleCancel} pendingCancel={pendingCancel} onUndo={() => { clearTimeout(cancelTimer.current); setPendingCancel(null); }} />
         ) : (
           <ActiveDeliveryTracking
             order={expandedOrder}
             onBack={() => setExpandedId(null)}
             onHistory={() => navigate("/history")}
+            onCancel={handleCancel}
+            pendingCancel={pendingCancel}
+            onUndo={() => { clearTimeout(cancelTimer.current); setPendingCancel(null); }}
           />
         )}
       </UserLayout>

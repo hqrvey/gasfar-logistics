@@ -39,7 +39,11 @@ function userForClient(user) {
     email: user.email || "",
     phone: user.phone,
     role: user.role,
+    adminRole: user.role === "admin" ? (user.adminRole || "super_admin") : undefined,
     accountStatus: user.accountStatus,
+    lastLoginAt: user.lastLoginAt || null,
+    hasProfilePhoto: Boolean(user.profilePhoto),
+    driverVerificationStatus: user.driverVerificationStatus || undefined,
   };
 }
 
@@ -314,26 +318,25 @@ export async function login(req, res, next) {
       return res.status(400).json({ message: "Enter your account and password." });
     }
 
-    // Beginner version: try username, then email, then phone separately.
+    // Login accepts username and PH mobile number, not unverified linked email.
     // passwordHash is normally hidden (`select: false` in User.js).
     let user = await User.findOne({ username: identifier }).select("+passwordHash");
-    if (!user) user = await User.findOne({ email: identifier }).select("+passwordHash");
     const phone = normalizePhone(identifier);
     if (!user && phone) user = await User.findOne({ phone: phone }).select("+passwordHash");
 
-    if (!user) return res.status(401).json({ message: "Invalid username, phone, email or password." });
+    if (!user) return res.status(401).json({ message: "Invalid username, phone or password." });
 
     // bcrypt.compare() hashes the supplied password appropriately and compares
     // it with the SAVED hash. We never retrieve a plaintext password from MongoDB.
     const passwordMatches = await bcrypt.compare(password, user.passwordHash);
-    if (!passwordMatches) return res.status(401).json({ message: "Invalid username, phone, email or password." });
+    if (!passwordMatches) return res.status(401).json({ message: "Invalid username, phone or password." });
     if (user.accountStatus !== "active") return res.status(403).json({ message: "This account is not active." });
 
     if (user.role === "driver") {
       const profile = await DriverProfile.findOne({ userId: user._id });
-      if (!profile || profile.verificationStatus !== "approved") {
-        return res.status(403).json({ code: "DRIVER_PENDING", message: "Driver account is awaiting admin approval." });
-      }
+      // Allow sign-in to view application status. Booking mutations are still
+      // blocked by requireApprovedDriver middleware in bookingRoutes.js.
+      user.driverVerificationStatus = profile ? profile.verificationStatus : "pending";
     }
 
     const remember = form.remember === true;
@@ -343,6 +346,10 @@ export async function login(req, res, next) {
       duration = "7d";
       maxAge = 7 * 86400000;
     }
+
+    // Save the latest successful sign-in time on the existing User document.
+    user.lastLoginAt = new Date();
+    await user.save();
 
     // JWT signs user ID + purpose. The backend rechecks this ID on API requests.
     const token = jwt.sign(
@@ -378,7 +385,11 @@ export function logout(req, res) {
 }
 
 // GET /api/auth/me: authMiddleware already attached the signed-in user to req.user.
-export function me(req, res) {
+export async function me(req, res) {
+  if (req.user.role === "driver") {
+    const profile = await DriverProfile.findOne({ userId: req.user._id });
+    req.user.driverVerificationStatus = profile ? profile.verificationStatus : "pending";
+  }
   return res.json({ user: userForClient(req.user) });
 }
 

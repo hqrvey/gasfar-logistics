@@ -101,7 +101,38 @@ const bookingSchema = new mongoose.Schema(
       notesToDriver: { type: String, default: "", maxlength: 1000 },
     },
 
+    // The file is stored privately, never as base64 in MongoDB.
+    itemPhoto: { type: String, default: "" },
+    journeyStartedAt: Date,
+    // A separate cash acknowledgment is required from the assigned driver.
+    cashCollectedAt: Date,
+    cashCollectedBy: { type: String, enum: ["sender", "recipient"] },
+    cashRefundStatus: { type: String, enum: ["none", "pending", "acknowledged"], default: "none" },
+    deliveryIssue: {
+      reason: String,
+      reportedAt: Date,
+      status: { type: String, enum: ["none", "open", "resolved"], default: "none" },
+    },
+    // Set once after a delivery's earnings have been added/deducted.
+    walletSettledAt: Date,
+    creditAppliedCentavos: { type: Number, default: 0, min: 0 },
+    // Driver cancellation fee and optional admin waiver.
+    cancellationFeeCentavos: { type: Number, default: 0 },
+    feeWaiver: {
+      status: { type: String, enum: ["none", "pending", "approved", "rejected"], default: "none" },
+      reason: String,
+      proof: String,
+      requestedAt: Date,
+      resolvedAt: Date,
+      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      reviewerName: String,
+    },
     pricing: {
+      baseCentavos: Number,
+      firstKmCentavos: Number,
+      extraKmCentavos: Number,
+      priorityCentavos: Number,
+      subtotalCentavos: Number,
       // These are calculated by Express using Geoapify, not trusted from React.
       distanceKm: { type: Number, required: true },
       durationMins: { type: Number, required: true },

@@ -1,155 +1,54 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Clock3,
-  Download,
-  Package,
-  Truck,
-  Users,
-  XCircle,
-} from "lucide-react";
-import {
-  DetailModal,
-  PageHeader,
-  Stat,
-  StatusItem,
-  DeliveryTable,
-  DeliveryBarChart,
-  ChartLegend,
-} from "../../components/admin/AdminUI.jsx";
-import { INITIAL_DELIVERIES } from "../../data/demo/adminMockData.js";
-import { REPORT_YEARS, DEFAULT_REPORT_YEAR } from "../../data/reportData.js";
-import { ROUTES } from "../../routes/paths.js";
-import { bookingDetailRows } from "../../utils/helpers.js";
+import { CheckCircle2, Package, Truck, Users } from "lucide-react";
+import { PageHeader, Stat } from "../../components/admin/AdminUI.jsx";
+import { extraService } from "../../services/extraService.js";
 
-// CSV export for this dashboard only.
-// Quote every cell so values with commas (e.g. "Today, 7:30 PM") don't break columns.
-const escapeCell = (value) => `"${String(value).replaceAll('"', '""')}"`;
-
-function downloadCSV(filename, headers, rows) {
-  const csv = [headers, ...rows]
-    .map((row) => row.map(escapeCell).join(","))
-    .join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-
-  URL.revokeObjectURL(url);
-}
-
+// Admin dashboard now counts REAL MongoDB documents, not INITIAL_DELIVERIES.
 export default function DashboardPage() {
+  const [stats, setStats] = useState(null);
+  const [rows, setRows] = useState([]);
+  const [error, setError] = useState("");
   const navigate = useNavigate();
-  const [selectedBooking, setSelectedBooking] = useState(null);
-  const [selectedYear, setSelectedYear] = useState(DEFAULT_REPORT_YEAR);
-
-  const exportCSV = () =>
-    downloadCSV(
-      "GASFAR_Dashboard_Deliveries.csv",
-      ["Booking ID", "User", "Driver", "Route", "Status", "ETA"],
-      INITIAL_DELIVERIES
-    );
-
-  const goToDeliveries = () => navigate(ROUTES.deliveries);
-
-  return (
-    <section className="content">
-      <PageHeader
-        title="Good evening, Admin 👋"
-        desc="Monitor GASFAR's users, drivers, bookings, and delivery operations."
-      >
-        <button className="secondary" onClick={exportCSV}>
-          <Download size={15} />
-          Export
-        </button>
-
-        <button className="primary" onClick={goToDeliveries}>
-          <Package size={15} />
-          View Deliveries
-        </button>
-      </PageHeader>
-
-      <div className="stats">
-        <Stat icon={<Users />} label="Total Users" value="2,486" change="+12.8%" />
-        <Stat icon={<Truck />} label="Total Drivers" value="186" change="+8.4%" />
-        <Stat icon={<Package />} label="Total Bookings" value="1,742" change="+5.1%" />
-        <Stat icon={<CheckCircle2 />} label="Success Rate" value="94.6%" change="+2.3%" />
+  useEffect(() => {
+    extraService.stats().then(result => setStats(result.stats)).catch(e => setError(e.message));
+    extraService.deliveries().then(result => setRows(result.bookings)).catch(e => setError(e.message));
+  }, []);
+  const success = stats && stats.total ? Math.round(stats.completed / stats.total * 100) : 0;
+  const monthly = Object.entries(stats?.monthly || {}).sort().slice(-6);
+  const highest = Math.max(1, ...monthly.map(([month, values]) => values.completed || 0));
+  return <section className="content">
+    <PageHeader title="GASFAR Dashboard" desc="Live deliveries, customers and driver activity from MongoDB." />
+    {error && <p role="alert" className="feature-error">{error}</p>}
+    <div className="stats">
+      <Stat icon={<Users />} label="Customers" value={stats?.users ?? "…"} />
+      <Stat icon={<Truck />} label="Drivers" value={stats?.drivers ?? "…"} />
+      <Stat icon={<Package />} label="Bookings" value={stats?.total ?? "…"} />
+      <Stat icon={<CheckCircle2 />} label="Completion Rate" value={`${success}%`} />
+    </div>
+    <div className="grid2">
+      <div className="card"><div className="cardHead"><h2>Delivery Status</h2></div><div className="feature-stats">
+        <p>Ongoing: <strong>{stats?.ongoing ?? 0}</strong></p><p>Completed: <strong>{stats?.completed ?? 0}</strong></p><p>Cancelled: <strong>{stats?.cancelled ?? 0}</strong></p>
+      </div></div>
+      <div className="card"><div className="cardHead"><h2>Financial Summary (Recorded)</h2></div><div className="feature-stats">
+        <p>Total completed delivery fares: <strong>₱{((stats?.grossCentavos || 0)/100).toFixed(2)}</strong></p>
+        <p>Calculated platform commissions: <strong>₱{((stats?.commissionCentavos || 0)/100).toFixed(2)}</strong></p>
+        <p className="feature-notice">Calculated amounts, not verified received cash.</p>
+      </div></div>
+    </div>
+    <div className="card feature-panel">
+      <h2>Delivered bookings by month</h2>
+      {!monthly.length && <p>No delivered bookings yet.</p>}
+      <div className="feature-monthly-chart">
+        {monthly.map(([month, values]) => <div className="feature-chart-row" key={month}>
+          <span>{month}</span><div className="feature-chart-track"><div className="feature-chart-bar" style={{ width: (100 * (values.completed || 0) / highest) + "%" }} /></div>
+          <strong>{values.completed || 0}</strong>
+        </div>)}
       </div>
-
-      <div className="grid2">
-        <div className="card chartCard">
-          <div className="cardHead">
-            <div>
-              <h2>Monthly Delivery Performance</h2>
-              <p>Monthly counts by delivery status</p>
-            </div>
-
-            <select
-              value={selectedYear}
-              onChange={(event) => setSelectedYear(Number(event.target.value))}
-              aria-label="Select dashboard analytics year"
-            >
-              {REPORT_YEARS.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <DeliveryBarChart year={selectedYear} variant="dashboard" />
-          <ChartLegend />
-        </div>
-
-        <div className="card">
-          <div className="cardHead">
-            <div>
-              <h2>Delivery Status</h2>
-              <p>Current transactions</p>
-            </div>
-
-            <button className="linkBtn" onClick={goToDeliveries}>
-              View details
-            </button>
-          </div>
-
-          <div className="statusGrid">
-            <StatusItem icon={<Clock3 />} label="Ongoing" value="428" tone="blue" />
-            <StatusItem icon={<CheckCircle2 />} label="Completed" value="1,128" tone="green" />
-            <StatusItem icon={<XCircle />} label="Cancelled" value="86" tone="red" />
-            <StatusItem icon={<AlertTriangle />} label="Needs Attention" value="32" tone="yellow" />
-          </div>
-        </div>
-      </div>
-
-      <div className="card tableCard">
-        <div className="cardHead">
-          <div>
-            <h2>Recent Delivery Bookings</h2>
-            <p>Latest delivery transactions</p>
-          </div>
-
-          <button className="linkBtn" onClick={goToDeliveries}>
-            View all →
-          </button>
-        </div>
-
-        <DeliveryTable rows={INITIAL_DELIVERIES} onView={setSelectedBooking} />
-      </div>
-
-      {selectedBooking && (
-        <DetailModal
-          title={`Booking ${selectedBooking[0]}`}
-          rows={bookingDetailRows(selectedBooking)}
-          onClose={() => setSelectedBooking(null)}
-        />
-      )}
-    </section>
-  );
+    </div>
+    <div className="card tableCard"><div className="cardHead"><h2>Latest Deliveries</h2><button className="linkBtn" onClick={() => navigate("/admin/deliveries")}>View all →</button></div>
+      <div className="tableScroll"><table><thead><tr><th>Order</th><th>Customer</th><th>Driver</th><th>Status</th><th>Fee</th></tr></thead>
+        <tbody>{rows.slice(0, 8).map(b => <tr key={b.id}><td>{b.id}</td><td>{b.customer}</td><td>{b.driver || "Unassigned"}</td><td>{b.status}</td><td>₱{b.price.toFixed(2)}</td></tr>)}</tbody></table></div>
+    </div>
+  </section>;
 }

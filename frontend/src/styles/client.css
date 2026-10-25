@@ -2263,3 +2263,38 @@ body{font-family:"DM Sans",sans-serif;-webkit-font-smoothing:antialiased;-moz-os
   opacity: 0.55;
   cursor: not-allowed;
 }
+/* ===============================================================
+   GASFAR FEATURE INTEGRATION — booking, wallet and admin workflows.
+   Added styles are scoped so existing screens retain their design.
+   =============================================================== */
+.feature-panel{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;margin:16px 0;box-shadow:0 2px 10px rgba(13,27,62,.035)}
+.feature-panel h3{color:#122344;font-size:1.08rem;margin:0 0 10px}
+.feature-panel p{line-height:1.5}
+.feature-mini{font-size:.84rem;color:#64748b;line-height:1.55;margin:10px 0}
+.feature-notice{padding:12px 15px;margin:12px 0;border:1px solid #f4d6aa;background:#fff8ee;border-radius:10px;color:#80500e;line-height:1.5}
+.feature-notice button{margin-left:8px;background:transparent;border:0;color:#0b62b7;text-decoration:underline;cursor:pointer;font-weight:700}
+.feature-error{color:#a52828;background:#fff1f2;border:1px solid #fca5a5;padding:10px 12px;border-radius:8px;margin:12px 0}
+.feature-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 17px;margin:9px 7px 9px 0;border:0;border-radius:9px;background:#f47b20;color:white;font-size:.88rem;font-weight:700;cursor:pointer;line-height:1.4}
+.feature-primary:hover{background:#d9690f}.feature-primary:disabled{opacity:.5;cursor:not-allowed}
+.feature-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.feature-actions button{border:1px solid #d9e1ec;border-radius:7px;padding:7px 10px;background:#fff;cursor:pointer;font-size:.82rem}
+.feature-actions button:hover{border-color:#f47b20;color:#cc6509}
+.feature-file-row{display:flex;gap:15px;flex-wrap:wrap;padding:12px 0;border-top:1px solid #e9edf4;align-items:center}
+.feature-file-row label{display:flex;flex:1;min-width:190px;flex-direction:column;gap:6px;color:#24364a;font-size:.83rem}
+.feature-file-row input{max-width:100%;padding:7px;border:1px solid #dde5ef;border-radius:7px;font:inherit}
+.feature-file-row small{color:#b05022}
+.feature-filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0}
+.feature-filters input,.feature-filters select{min-height:35px;border:1px solid #d9e1ec;border-radius:8px;padding:7px 10px;background:#fff;color:#1a2035}
+.feature-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin:14px 0}
+.feature-stat{padding:16px;border:1px solid #e0e7f0;border-radius:12px;background:#fff}
+.feature-stat strong{display:block;font-size:1.35rem;margin:5px 0;color:#0d1b3e}
+@media(max-width:640px){.feature-panel{padding:13px}.feature-actions{flex-direction:column;align-items:flex-start}.feature-file-row{display:block}.feature-file-row label{margin-bottom:12px}}
+
+
+/* Optional customer GPS pickup button and signup confirmation. */
+.feature-secondary { display: inline-flex; align-items: center; gap: 7px; background: white; border: 1px solid #bfc8d6; border-radius: 8px; padding: 9px 13px; font: inherit; cursor: pointer; margin: 8px 0; }
+.feature-secondary:hover { background: #f1f5f9; }
+.feature-secondary:disabled { cursor: wait; opacity: .65; }
+.feature-signup-success { text-align: center; padding: 28px 16px; }
+.feature-signup-success h2 { margin-bottom: 12px; }
+.feature-signup-success p { margin-bottom: 22px; line-height: 1.55; }

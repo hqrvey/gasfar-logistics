@@ -45,6 +45,22 @@ const driverProfileSchema = new mongoose.Schema(
 
     // The strings are filenames of uploaded private documents, not file bytes.
     // The Express registration route (Multer) saves the files to disk first.
+    // Expiry dates are optional for older accounts. Admin can fill these later.
+    licenseExpiresAt: { type: Date, default: null },
+    orExpiresAt: { type: Date, default: null },
+    crExpiresAt: { type: Date, default: null },
+    // Changes don't replace approved documents until an admin accepts them.
+    renewal: {
+      status: { type: String, enum: ["none", "pending", "approved", "rejected"], default: "none" },
+      requestedAt: Date,
+      vehicleType: String,
+      plateNumber: String,
+      documents: { license: String, or: String, cr: String, backplate: String },
+      licenseExpiresAt: Date,
+      orExpiresAt: Date,
+      crExpiresAt: Date,
+      reason: String,
+    },
     documents: {
       profilePhoto: { type: String, required: true },
       license: { type: String, required: true },

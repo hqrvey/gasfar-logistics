@@ -53,6 +53,18 @@ const userSchema = new mongoose.Schema(
     // enum means the value MUST be one of the three role names in the array.
     role: { type: String, enum: ["customer", "driver", "admin"], required: true },
 
+    // A moderator is still an admin account. We use the SAME users collection,
+    // login form, hashed passwords and JWT cookie as any other GASFAR account.
+    // Old administrators without adminRole are treated as super_admin.
+    adminRole: {
+      type: String,
+      enum: ["super_admin", "fee_moderator", "driver_moderator", "user_moderator"],
+      default: undefined,
+    },
+    // Notifications are computed from existing work. Store only which items
+    // this administrator has already marked as read (not another collection).
+    readAdminNotifications: { type: [String], default: [] },
+
     // Account enabled/disabled is DIFFERENT from a driver's verification status.
     accountStatus: {
       type: String,
@@ -62,6 +74,15 @@ const userSchema = new mongoose.Schema(
 
     // Date = a date/time. `null` means no verification timestamp was saved yet.
     phoneVerifiedAt: { type: Date, default: null },
+    // Last successful login, displayed in the admin profile.
+    lastLoginAt: { type: Date, default: null },
+    // Promotional credits from a driver cancellation. NOT actual cash.
+    creditCentavos: { type: Number, default: 0, min: 0 },
+    profilePhoto: { type: String, default: "" },
+    savedAddresses: [{
+      id: String, label: String, icon: String,
+      address: String, lat: Number, lng: Number,
+    }],
   },
   // timestamps:true adds createdAt and updatedAt fields automatically.
   { timestamps: true }

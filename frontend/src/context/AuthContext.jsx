@@ -1,8 +1,6 @@
 // AUTH CONTEXT: Makes the current logged-in account available to all React pages.
 // React Context is NOT a database. It only stores the user returned by Express.
 import { createContext, useContext, useEffect, useState } from "react";
-import usePersistedState from "../hooks/usePersistedState.js";
-import { STORAGE_KEYS } from "../utils/storage.js";
 import { authService } from "../services/authService.js";
 
 const AuthContext = createContext(null);
@@ -11,10 +9,6 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null); // The current user from GET /api/auth/me.
   const [loading, setLoading] = useState(true); // Check login on startup.
 
-  // Existing admin profile UI preferences remain local until profile APIs exist.
-  const [savedName, setName] = usePersistedState(STORAGE_KEYS.adminName, "Admin User");
-  const [savedEmail, setEmail] = usePersistedState(STORAGE_KEYS.adminEmail, "");
-  const [photo, setPhoto] = usePersistedState(STORAGE_KEYS.adminPhoto, "");
 
   useEffect(() => {
     let active = true; // Avoid changing state after this component unmounts.
@@ -33,6 +27,13 @@ export function AuthProvider({ children }) {
 
     return () => { active = false; }; // Cleanup if the app unmounts.
   }, []);
+
+  // Fetch updated profile after a user edits their account.
+  async function refreshUser() {
+    const result = await authService.me();
+    setUser(result.user);
+    return result.user;
+  }
 
   // Called from LoginPage. Express verifies the password before returning.
   async function login(identifier, password, remember) {
@@ -61,12 +62,10 @@ export function AuthProvider({ children }) {
       role: user?.role || null,
       login,
       logout,
-      name: user?.role === "admin" ? savedName : displayName,
-      email: user?.role === "admin" ? (savedEmail || user.email) : (user?.email || ""),
-      photo,
-      setName,
-      setEmail,
-      setPhoto,
+      refreshUser,
+      name: displayName,
+      email: user?.email || "",
+      photo: user?.hasProfilePhoto ? (import.meta.env.VITE_API_URL || "http://localhost:5001/api") + "/extra/me/photo" : "",
     }}>
       {children}
     </AuthContext.Provider>

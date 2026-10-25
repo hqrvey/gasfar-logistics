@@ -16,7 +16,7 @@ import {
   sendCode, verifyCode, register, login, logout, me,
   listDriverApplications, updateDriverApproval, getDriverDocument,
 } from "../controllers/authController.js";
-import { requireAuth, allowRoles } from "../middleware/authMiddleware.js";
+import { requireAuth, allowRoles, allowAdminSections } from "../middleware/authMiddleware.js";
 
 const router = express.Router(); // A smaller router mounted by server.js.
 
@@ -79,8 +79,8 @@ router.post("/logout", logout);                      // Clear cookie.
 router.get("/me", requireAuth, me);                  // Return logged-in account.
 
 // Admin-only endpoints: requireAuth finds req.user; allowRoles checks the role.
-router.get("/driver-applications", requireAuth, allowRoles("admin"), listDriverApplications);
-router.patch("/drivers/:id/approval", requireAuth, allowRoles("admin"), updateDriverApproval);
-router.get("/drivers/:id/documents/:field", requireAuth, allowRoles("admin"), getDriverDocument);
+router.get("/driver-applications", requireAuth, allowAdminSections("drivers"), listDriverApplications);
+router.patch("/drivers/:id/approval", requireAuth, allowAdminSections("drivers"), updateDriverApproval);
+router.get("/drivers/:id/documents/:field", requireAuth, allowAdminSections("drivers"), getDriverDocument);
 
 export default router;

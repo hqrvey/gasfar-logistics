@@ -1,23 +1,8 @@
-export const MOCK_NOTIFICATIONS_USER = [
-  { id: "n1", type: "order", message: "Your order #0012 is on the way!", time: "2 mins ago", read: false },
-  { id: "n2", type: "order", message: "Driver has picked up your package.", time: "15 mins ago", read: false },
-  { id: "n3", type: "order", message: "Order #0011 completed. Rate your driver!", time: "Yesterday", read: true },
-  { id: "n4", type: "system", message: "New login detected on Chrome — was this you?", time: "2 days ago", read: false },
-  { id: "n5", type: "system", message: "Your account has been verified.", time: "1 week ago", read: true },
-];
-
-export const MOCK_NOTIFICATIONS_DRIVER = [
-  { id: "n1", type: "job", message: "New booking available near you.", time: "Just now", read: false },
-  { id: "n2", type: "earnings", message: "You earned ₱167 from ORD-0011.", time: "2 hours ago", read: true },
-  { id: "n3", type: "job", message: "Priority delivery request — Bulacan area.", time: "30 mins ago", read: false },
-  { id: "n4", type: "earnings", message: "Commission of ₱18.50 deducted from ORD-0012.", time: "3 hours ago", read: true },
-  { id: "n5", type: "account", message: "Your vehicle documents are verified.", time: "2 days ago", read: true },
-];
-
-export const MOCK_SAVED_ADDRESSES = [
-  { id: "a1", label: "Home", address: "123 Malolos St, Bulacan", lat: 14.8433, lng: 120.8107, icon: "home" },
-  { id: "a2", label: "Work", address: "456 Guiguinto, Bulacan", lat: 14.8285, lng: 120.8817, icon: "work" },
-];
+// Frontend no longer invents activity messages or saved-address records.
+// Actual booking history and addresses are read from MongoDB REST endpoints.
+export const MOCK_NOTIFICATIONS_USER = [];
+export const MOCK_NOTIFICATIONS_DRIVER = [];
+export const MOCK_SAVED_ADDRESSES = [];
 
 export const MOCK_DRIVER = {
   name: "Pedro Santos",

@@ -3,12 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3, Bell, ChevronDown, LayoutDashboard, LogOut,
-  Menu, Package, Search, Settings, Truck, UserCircle, Users,
+  Menu, Package, Search, Settings, Truck, UserCircle, Users, Shield,
 } from "lucide-react";
 import logo from "../assets/logos/gaspar-logo2.png";
 import { useAuth } from "../context/AuthContext.jsx";
 import { ROUTES } from "../routes/paths.js";
-import { INITIAL_DELIVERIES, INITIAL_DRIVERS, INITIAL_USERS } from "../data/demo/adminMockData.js";
+import { extraService } from "../services/extraService.js";
 import usePersistedState from "../hooks/usePersistedState.js";
 import { STORAGE_KEYS } from "../utils/storage.js";
 
@@ -19,6 +19,9 @@ const NAV_ITEMS = [
   { to: ROUTES.drivers, label: "Driver Management", icon: Truck },
   { to: ROUTES.deliveries, label: "Delivery Management", icon: Package },
   { to: ROUTES.reports, label: "Reports & Analytics", icon: BarChart3 },
+  { to: "/admin/fee-reviews", label: "Fee & Wallet Reviews", icon: BarChart3 },
+  { to: ROUTES.adminNotifications, label: "Notifications", icon: Bell },
+  { to: ROUTES.roles, label: "Roles & Moderators", icon: Shield },
 ];
 const SETTINGS_ITEM = { to: ROUTES.settings, label: "Settings", icon: Settings };
 
@@ -36,6 +39,17 @@ function SidebarLink({ to, label, icon: Icon }) {
 }
 
 function Sidebar({ collapsed }) {
+  const { user } = useAuth();
+  // Moderators see only pages they are allowed to open.
+  const adminRole = user?.adminRole || "super_admin";
+  function visible(item) {
+    if (item.to === ROUTES.adminNotifications) return true;
+    if (adminRole === "super_admin") return true;
+    if (adminRole === "user_moderator") return item.to === ROUTES.users;
+    if (adminRole === "driver_moderator") return item.to === ROUTES.drivers;
+    if (adminRole === "fee_moderator") return item.to === "/admin/fee-reviews";
+    return false;
+  }
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -54,136 +68,100 @@ function Sidebar({ collapsed }) {
       <div className="sectionLabel">MAIN MENU</div>
 
       <nav>
-        {NAV_ITEMS.map((item) => (
+        {NAV_ITEMS.filter(visible).map((item) => (
           <SidebarLink key={item.to} {...item} />
         ))}
       </nav>
 
       <div className="sectionLabel systemLabel">SYSTEM</div>
 
-      <SidebarLink {...SETTINGS_ITEM} />
+      {(user?.adminRole === "super_admin" || !user?.adminRole) && <SidebarLink {...SETTINGS_ITEM} />}
     </aside>
   );
 }
 
-// GlobalSearch
-const SOURCES = [
-  { type: "User", rows: INITIAL_USERS, to: ROUTES.users, label: (row) => row[1] },
-  { type: "Driver", rows: INITIAL_DRIVERS, to: ROUTES.drivers, label: (row) => row[1] },
-  { type: "Booking", rows: INITIAL_DELIVERIES, to: ROUTES.deliveries, label: (row) => row[0] },
-];
-
-function searchAll(query) {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-
-  return SOURCES.flatMap(({ type, rows, to, label }) =>
-    rows
-      .filter((row) => row.join(" ").toLowerCase().includes(q))
-      .map((row) => ({ type, id: row[0], name: label(row), to }))
-  ).slice(0, 6);
-}
-
+// GlobalSearch: get real records from Express, never INITIAL_USERS mock arrays.
 function GlobalSearch() {
   const [query, setQuery] = useState("");
+  const [records, setRecords] = useState([]);
   const navigate = useNavigate();
-  const results = useMemo(() => searchAll(query), [query]);
+  const { user } = useAuth();
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      const role = user?.adminRole || "super_admin";
+      const data = [];
+      // One API request for each section the moderator can actually access.
+      try {
+        if (role === "super_admin" || role === "user_moderator") {
+          const response = await extraService.adminUsers();
+          for (const account of response.users) data.push({ type: "Customer", id: account.id, name: account.firstName + " " + account.lastName, to: ROUTES.users });
+        }
+        if (role === "super_admin" || role === "driver_moderator") {
+          const response = await extraService.adminDrivers();
+          for (const profile of response.profiles) {
+            if (profile.userId) data.push({ type: "Driver", id: profile.userId._id, name: profile.userId.firstName + " " + profile.userId.lastName, to: ROUTES.drivers });
+          }
+        }
+        if (role === "super_admin") {
+          const response = await extraService.deliveries();
+          for (const booking of response.bookings) data.push({ type: "Booking", id: booking.id, name: booking.customer, to: ROUTES.deliveries });
+        }
+      } catch (error) { console.warn("Admin search:", error.message); }
+      if (active) setRecords(data);
+    }
+    load();
+    return () => { active = false; };
+  }, [user?.adminRole]);
 
-  const open = (result) => {
-    navigate(result.to);
+  const results = records.filter(item => (item.name + " " + item.id).toLowerCase().includes(query.toLowerCase())).slice(0, 6);
+  function open(result) {
+    navigate(result.to + "?focus=" + encodeURIComponent(result.id));
     setQuery("");
-  };
-
-  return (
-    <div className="searchWrap">
-      <div className="searchBox">
-        <Search size={17} />
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search users, drivers, bookings..."
-        />
-      </div>
-
-      {query && (
-        <div className="searchResults">
-          {results.length ? (
-            results.map((result) => (
-              <button key={`${result.type}-${result.id}`} onClick={() => open(result)}>
-                <span>
-                  <b>{result.name}</b>
-                  <small>
-                    {result.type} • {result.id}
-                  </small>
-                </span>
-                <ChevronDown size={13} />
-              </button>
-            ))
-          ) : (
-            <div className="noResults">No matching users, drivers, or bookings.</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+  }
+  return <div className="searchWrap">
+    <div className="searchBox"><Search size={17}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search MongoDB records..." /></div>
+    {query && <div className="searchResults">
+      {results.length ? results.map(result => <button key={result.type + result.id} onClick={() => open(result)}>
+        <span><b>{result.name}</b><small>{result.type} • {result.id}</small></span><ChevronDown size={13}/>
+      </button>) : <div className="noResults">No matching records.</div>}
+    </div>}
+  </div>;
 }
 
-// NotificationMenu
-const NOTIFICATIONS = [
-  {
-    tone: "red",
-    title: "New complaint received",
-    text: "Customer reported a driver incident.",
-    to: ROUTES.complaints,
-  },
-  {
-    tone: "orange",
-    title: "Driver verification pending",
-    text: "A new application needs review.",
-    to: ROUTES.drivers,
-  },
-  {
-    tone: "blue",
-    title: "Delivery update",
-    text: "A booking status changed.",
-    to: ROUTES.deliveries,
-  },
-];
-
+// The bell shows the FIVE newest outstanding tasks from MongoDB.
 function NotificationMenu({ open, onToggle }) {
   const navigate = useNavigate();
-
-  return (
-    <div className="dropWrap">
-      <button className="iconButton notification" onClick={onToggle} title="Notifications">
-        <Bell size={18} />
-        <i />
-      </button>
-
-      {open && (
-        <div className="dropdown notificationDrop">
-          <div className="dropTitle">
-            Notifications <span>{NOTIFICATIONS.length} new</span>
-          </div>
-
-          {NOTIFICATIONS.map(({ tone, title, text, to }) => (
-            <button key={title} onClick={() => navigate(to)}>
-              <span className={`notifDot ${tone}`} />
-              <span>
-                <b>{title}</b>
-                <small>{text}</small>
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  const [items, setItems] = useState([]);
+  async function reload() {
+    try { const result = await extraService.adminAttention(); setItems(result.items); }
+    catch (error) { console.warn("Admin notifications:", error.message); }
+  }
+  useEffect(() => { reload(); }, []);
+  useEffect(() => { if (open) reload(); }, [open]);
+  const unread = items.filter(item => !item.read);
+  async function openTask(item) {
+    try { await extraService.markAttentionRead(item.id); }
+    catch (error) { console.warn(error.message); }
+    onToggle();
+    navigate(item.to);
+  }
+  return <div className="dropWrap">
+    <button className="iconButton notification" onClick={onToggle} title="Notifications"><Bell size={18}/>{unread.length > 0 && <i />}</button>
+    {open && <div className="dropdown notificationDrop">
+      <div className="dropTitle">Notifications <span>{unread.length} unread</span></div>
+      {unread.length === 0 && <p className="feature-mini">Nothing needs attention.</p>}
+      {unread.slice(0,5).map(item => <button key={item.id} onClick={() => openTask(item)}>
+        <span className="notifDot orange"/><span><b>{item.title}</b><small>{item.detail}</small></span>
+      </button>)}
+      <button onClick={() => { navigate(ROUTES.adminNotifications); onToggle(); }}>View all notifications</button>
+    </div>}
+  </div>;
 }
 
 // ProfileMenu
 function ProfileMenu({ open, onToggle }) {
-  const { name, photo, logout } = useAuth();
+  const { name, photo, logout, user } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -204,7 +182,7 @@ function ProfileMenu({ open, onToggle }) {
 
         <div>
           <b>{name}</b>
-          <small>Operations Admin</small>
+          <small>{(user?.adminRole || "super_admin").replaceAll("_", " ")}</small>
         </div>
 
         <ChevronDown size={15} />

@@ -15,6 +15,8 @@
 import { createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import Booking from "../models/Booking.js";
 import DriverProfile from "../models/DriverProfile.js";
+import User from "../models/User.js";
+import Wallet from "../models/Wallet.js";
 import { sendSMS } from "../services/smsService.js";
 
 // These are the statuses where a driver is actively working on a booking.
@@ -119,6 +121,22 @@ function showBooking(booking, viewer) {
     paymentStatus: booking.payment.status,
     price: "₱" + pricePesos.toLocaleString("en-PH"),
     feeCentavos: booking.pricing.feeCentavos,
+    fareBreakdown: {
+      base: (booking.pricing.baseCentavos || 0) / 100,
+      firstKm: (booking.pricing.firstKmCentavos || 0) / 100,
+      extraKm: (booking.pricing.extraKmCentavos || 0) / 100,
+      priority: (booking.pricing.priorityCentavos || 0) / 100,
+      total: booking.pricing.feeCentavos / 100,
+      distanceKm: booking.pricing.distanceKm,
+    },
+    creditApplied: (booking.creditAppliedCentavos || 0) / 100,
+    amountDue: (booking.pricing.feeCentavos - (booking.creditAppliedCentavos || 0)) / 100,
+    cashCollectedAt: booking.cashCollectedAt || null,
+    journeyStartedAt: booking.journeyStartedAt || null,
+    cancellationFee: (booking.cancellationFeeCentavos || 0) / 100,
+    feeWaiver: booking.feeWaiver || { status: "none" },
+    itemPhotoUrl: booking.itemPhoto ? "/bookings/" + encodeURIComponent(booking.bookingCode) + "/item-photo" : "",
+    walletSettledAt: booking.walletSettledAt || null,
     driver: booking.driver && booking.driver.name ? booking.driver : null,
     driverId: driverId,
     driverLocation: booking.driverLocation,
@@ -151,7 +169,30 @@ function canView(booking, user) {
 }
 
 // Call Geoapify FROM the backend to calculate the authoritative delivery price.
-async function calculateRoutePrice(pickup, dropoff) {
+// Prices come from the uploaded client/utils/pricing.js (not its conflicting README).
+const FARE_RATES = {
+  motorcycle: { base: 50, first: 6.5, extra: 6, split: 5 },
+  sedan: { base: 100, first: 18, extra: 15, split: 5 },
+  suv: { base: 115, first: 20, extra: 20, split: 5 },
+  pickup: { base: 240, first: 20, extra: 20, split: 5 },
+  l300: { base: 280, first: 24, extra: 22, split: 10 },
+};
+function fareForVehicle(distanceKm, vehicleType, deliveryType) {
+  const rate = FARE_RATES[vehicleType];
+  const firstKm = Math.min(distanceKm, rate.split);
+  const extraKm = Math.max(0, distanceKm - rate.split);
+  const base = Math.round(rate.base * 100);
+  const first = Math.round(firstKm * rate.first) * 100;
+  const extra = Math.round(extraKm * rate.extra) * 100;
+  const subtotal = base + first + extra;
+  const priority = deliveryType === "priority" ? Math.round(subtotal * 0.20) : 0;
+  return {
+    baseCentavos: base, firstKmCentavos: first, extraKmCentavos: extra,
+    subtotalCentavos: subtotal, priorityCentavos: priority,
+    feeCentavos: subtotal + priority,
+  };
+}
+async function calculateRoutePrice(pickup, dropoff, vehicleType, deliveryType) {
   const key = process.env.GEOAPIFY_API_KEY;
   if (!key) {
     const error = new Error("Set GEOAPIFY_API_KEY in backend/.env before booking.");
@@ -192,9 +233,8 @@ async function calculateRoutePrice(pickup, dropoff) {
 
   const distanceKm = Math.round(properties.distance / 100) / 10;
   const durationMins = Math.max(1, Math.ceil(properties.time / 60));
-  // Current prototype pricing: ₱50 base + ₱12 per kilometre.
-  const feeCentavos = Math.round((50 + distanceKm * 12) * 100);
-  return { distanceKm, durationMins, feeCentavos };
+  const breakdown = fareForVehicle(distanceKm, vehicleType, deliveryType);
+  return { distanceKm, durationMins, ...breakdown };
 }
 
 // HMAC makes the four-digit PIN impossible to read directly from the database.
@@ -240,6 +280,19 @@ export async function createBooking(req, res) {
     if (!validLocation(form.pickup) || !validLocation(form.dropoff)) {
       return res.status(400).json({ message: "Valid pickup and drop-off locations are required." });
     }
+    // Driver GPS is not part of this check. This calculates the straight-line
+    // gap between the CUSTOMER'S TWO SELECTED PINS (Haversine distance).
+    // 100 metres is a product rule; it avoids placing both pins on one spot.
+    const lat1 = form.pickup.lat * Math.PI / 180;
+    const lat2 = form.dropoff.lat * Math.PI / 180;
+    const latDifference = (form.dropoff.lat - form.pickup.lat) * Math.PI / 180;
+    const lngDifference = (form.dropoff.lng - form.pickup.lng) * Math.PI / 180;
+    const a = Math.sin(latDifference / 2) ** 2
+      + Math.cos(lat1) * Math.cos(lat2) * Math.sin(lngDifference / 2) ** 2;
+    const distanceBetweenPins = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    if (distanceBetweenPins < 100) {
+      return res.status(400).json({ message: "Pickup and drop-off must be at least 100 metres apart." });
+    }
     if (!Object.keys(VEHICLE_LABELS).includes(form.vehicleType)) {
       return res.status(400).json({ message: "Choose a valid vehicle." });
     }
@@ -263,11 +316,11 @@ export async function createBooking(req, res) {
     if (!Number.isInteger(form.quantity) || form.quantity < 1 || form.quantity > 1000) {
       return res.status(400).json({ message: "Enter a valid package quantity." });
     }
-    if (!["cash", "gcash", "maya"].includes(form.paymentMethod)) {
-      return res.status(400).json({ message: "Choose a payment method." });
-    }
-    if (!["sender", "recipient"].includes(form.paymentSide)) {
-      return res.status(400).json({ message: "Choose who will pay." });
+    // The new booking policy is CASH paid by the SENDER only.
+    // Historical GCash/Maya/recipient bookings remain in MongoDB so old
+    // delivery records are not destroyed. New bookings cannot use them.
+    if (form.paymentMethod !== "cash" || form.paymentSide !== "sender") {
+      return res.status(400).json({ message: "New bookings require sender-paid cash." });
     }
     if (!["now", "scheduled"].includes(form.scheduleType)) {
       return res.status(400).json({ message: "Choose a delivery schedule." });
@@ -287,12 +340,27 @@ export async function createBooking(req, res) {
     }
 
     // Never trust a price sent by the browser; the backend gets distance itself.
-    const pricing = await calculateRoutePrice(form.pickup, form.dropoff);
+    const pricing = await calculateRoutePrice(form.pickup, form.dropoff, form.vehicleType, form.deliveryType);
+    // Credits are PROMOTIONAL discounts, never withdrawable cash.
+    // Atomic $inc prevents two simultaneous bookings spending the same credits.
+    let creditUsed = 0;
+    const customer = await User.findById(req.user._id);
+    if (customer && customer.creditCentavos > 0) {
+      creditUsed = Math.min(customer.creditCentavos, pricing.feeCentavos);
+      const changed = await User.findOneAndUpdate(
+        { _id: req.user._id, creditCentavos: { $gte: creditUsed } },
+        { $inc: { creditCentavos: -creditUsed } }, { new: true }
+      );
+      if (!changed) creditUsed = 0;
+    }
     const bookingCode = "ORD-" + Date.now() + "-" + randomBytes(3).toString("hex").toUpperCase();
     const now = new Date();
 
-    // .create() is approximately SQL INSERT: it validates Booking.js then saves.
-    const booking = await Booking.create({
+    // .create() is approximately SQL INSERT. We must refund any reserved
+    // promotional credit if MongoDB rejects this insert (e.g. validation failure).
+    let booking;
+    try {
+    booking = await Booking.create({
       bookingCode: bookingCode,
       // req.user was found using the login cookie in authMiddleware.js.
       customerId: req.user._id,
@@ -317,8 +385,16 @@ export async function createBooking(req, res) {
       },
       payment: { method: form.paymentMethod, payer: form.paymentSide, status: "unpaid" },
       pricing: pricing,
+      creditAppliedCentavos: creditUsed,
       statusHistory: [{ status: "pending", at: now, by: req.user._id }],
     });
+    } catch (problem) {
+      // This compensating update restores promotional credit on create failure.
+      if (creditUsed > 0) {
+        await User.updateOne({ _id: req.user._id }, { $inc: { creditCentavos: creditUsed } });
+      }
+      throw problem;
+    }
 
     // HTTP 201 means Created. React reads response.booking.
     return res.status(201).json({ booking: showBooking(booking, req.user) });
@@ -533,6 +609,21 @@ export async function acceptBooking(req, res) {
       }
     }
 
+    // For cash deliveries the driver keeps the fare and owes the platform 15%.
+    // Requiring coverage avoids a negative platform commission balance.
+    if (candidate.payment.method === "cash") {
+      const wallet = await Wallet.findOne({ userId: req.user._id });
+      const commission = Math.round(candidate.pricing.feeCentavos * 0.15);
+      if (!wallet || wallet.balanceCentavos < commission) {
+        return res.status(409).json({ message: "Wallet must cover the estimated 15% cash commission. Request a top-up first." });
+      }
+    }
+    const expires = [profile.licenseExpiresAt, profile.orExpiresAt, profile.crExpiresAt];
+    for (const expiry of expires) {
+      if (expiry && new Date(expiry).getTime() < Date.now()) {
+        return res.status(403).json({ message: "A driver document has expired. Submit a renewal." });
+      }
+    }
     const now = new Date();
     const driverInfo = {
       name: req.user.firstName + " " + req.user.lastName,
@@ -616,6 +707,15 @@ export async function updateStatus(req, res) {
       return res.status(400).json({ message: "Use the next stage; delivered requires PIN verification." });
     }
 
+    // NEW WORKFLOW: The driver first marks the parcel picked up, then
+    // confirms that the sender paid cash BEFORE arriving at drop-off.
+    // Unlike the old implementation, pickup itself needs no cash confirmation.
+    if (requested === "arrived") {
+      const current = await Booking.findOne({ bookingCode: req.params.id, driverId: req.user._id, status: "picked_up" });
+      if (current && current.payment.method === "cash" && current.payment.payer === "sender" && !current.cashCollectedAt) {
+        return res.status(409).json({ message: "Confirm sender cash payment after pickup before proceeding to drop-off." });
+      }
+    }
     // Atomic filter prevents skipping/repeating stages even with two requests.
     const booking = await Booking.findOneAndUpdate(
       { bookingCode: req.params.id, driverId: req.user._id, status: previous },
@@ -698,6 +798,10 @@ export async function resendDeliveryPin(req, res) {
 export async function verifyDelivery(req, res) {
   try {
     const pin = String((req.body && req.body.pin) || "");
+    const beforePin = await Booking.findOne({ bookingCode: req.params.id, driverId: req.user._id, status: "arrived" });
+    if (beforePin && beforePin.payment.method === "cash" && beforePin.payment.payer === "recipient" && !beforePin.cashCollectedAt) {
+      return res.status(409).json({ message: "Confirm recipient cash payment before completing delivery." });
+    }
     if (!/^\d{4}$/.test(pin)) return res.status(400).json({ message: "Enter the four-digit recipient PIN." });
 
     // IMPORTANT: count the attempt ATOMICALLY before comparing PINs.
@@ -739,6 +843,11 @@ export async function verifyDelivery(req, res) {
       { new: true }
     );
     if (!completed) return res.status(409).json({ message: "Delivery already completed or changed." });
+    // Wallet updates for completed CASH jobs; confirmed online payments are
+    // settled separately by an admin. Neither operation transfers real money.
+    if (completed.payment.method === "cash") {
+      await settleWallet(completed);
+    }
     return res.json({ booking: showBooking(completed, req.user), message: "Delivery completed successfully." });
   } catch (error) {
     return replyError(res, error);
@@ -761,12 +870,20 @@ export async function cancelBooking(req, res) {
     let filter = { bookingCode: req.params.id };
     if (role === "customer") {
       filter.customerId = req.user._id;
-      filter.status = "pending";
+      filter.status = { $in: ["pending", "accepted"] };
     } else {
       filter.driverId = req.user._id;
       filter.status = { $in: ["accepted", "at_pickup"] };
     }
 
+    // Accepted: free; heading to pickup: ₱10; at pickup: ₱20.
+    // A cancellation always records the reason, even if no fee is due.
+    let fee = 0;
+    if (role === "driver") {
+      const current = await Booking.findOne(filter);
+      if (current && current.status === "at_pickup") fee = 2000;
+      else if (current && current.journeyStartedAt) fee = 1000;
+    }
     const now = new Date();
     const booking = await Booking.findOneAndUpdate(
       filter,
@@ -774,6 +891,8 @@ export async function cancelBooking(req, res) {
         $set: {
           status: "cancelled", cancelledAt: now, cancelledBy: role,
           cancelReason: reason, driverLocation: null, locationUpdatedAt: null,
+          cancellationFeeCentavos: fee,
+          cashRefundStatus: "none",
         },
         $push: { statusHistory: { status: "cancelled", at: now, by: req.user._id } },
       },
@@ -781,6 +900,21 @@ export async function cancelBooking(req, res) {
     );
 
     if (!booking) return res.status(409).json({ message: "This booking can no longer be cancelled here." });
+    if (booking.cashCollectedAt && booking.payment.method === "cash") {
+      booking.cashRefundStatus = "pending";
+      await booking.save();
+    }
+    // The fee becomes promotional customer credit once the driver wallet is charged.
+    // Use the booking code as a ledger reference; admins can review a waiver later.
+    if (fee > 0 && booking.driverId) {
+      const wallet = await Wallet.findOne({ userId: booking.driverId });
+      if (wallet) {
+        wallet.balanceCentavos -= fee;
+        wallet.transactions.push({ kind: "cancellation", amountCentavos: -fee, label: "Cancellation fee", bookingCode: booking.bookingCode });
+        await wallet.save();
+        await User.updateOne({ _id: booking.customerId }, { $inc: { creditCentavos: fee } });
+      }
+    }
     return res.json({ booking: showBooking(booking, req.user) });
   } catch (error) {
     return replyError(res, error);
@@ -813,4 +947,96 @@ export async function updateDriverLocation(req, res) {
   } catch (error) {
     return replyError(res, error);
   }
+}
+
+// ============================================================
+// EXTRA FEATURES FROM THE NEW FRONTEND
+// ============================================================
+
+// A short, separate endpoint records when a driver starts travelling to pickup.
+// We keep the existing accepted/at_pickup status names to avoid breaking maps.
+export async function startPickupJourney(req, res) {
+  const booking = await Booking.findOne({ bookingCode: req.params.id, driverId: req.user._id, status: "accepted" });
+  if (!booking) return res.status(409).json({ message: "This job is not in the accepted stage." });
+  if (!booking.journeyStartedAt) { booking.journeyStartedAt = new Date(); await booking.save(); }
+  return res.json({ booking: showBooking(booking, req.user) });
+}
+
+// Driver confirms PHYSICAL cash collection; this does not mark a GCash payment paid.
+export async function confirmCashCollection(req, res) {
+  const booking = await Booking.findOne({ bookingCode: req.params.id, driverId: req.user._id });
+  if (!booking) return res.status(404).json({ message: "Booking not found." });
+  if (booking.payment.method !== "cash") return res.status(400).json({ message: "Cash confirmation is for cash bookings only." });
+  if (!["picked_up", "arrived"].includes(booking.status)) return res.status(409).json({ message: "Collect cash after collecting the parcel, before delivery completion." });
+  if (booking.payment.payer === "sender" && !["picked_up", "arrived"].includes(booking.status)) return res.status(409).json({ message: "Collect sender payment after package pickup." });
+  if (booking.payment.payer === "recipient" && !["arrived", "delivered"].includes(booking.status)) return res.status(409).json({ message: "Confirm recipient payment at drop-off." });
+  if (!booking.cashCollectedAt) {
+    booking.cashCollectedAt = new Date();
+    booking.cashCollectedBy = booking.payment.payer;
+    booking.payment.status = "paid";
+    await booking.save();
+  }
+  return res.json({ booking: showBooking(booking, req.user) });
+}
+
+// The original project's image control was UI-only. Store a private uploaded file.
+export async function attachItemPhoto(req, res) {
+  const booking = await Booking.findOne({ bookingCode: req.params.id, customerId: req.user._id, status: "pending" });
+  if (!booking) return res.status(404).json({ message: "Pending booking not found." });
+  if (!req.file) return res.status(400).json({ message: "Choose an image." });
+  booking.itemPhoto = req.file.filename;
+  await booking.save();
+  return res.json({ booking: showBooking(booking, req.user) });
+}
+export async function readItemPhoto(req, res) {
+  const booking = await Booking.findOne({ bookingCode: req.params.id });
+  if (!booking || !booking.itemPhoto || (!canView(booking, req.user) && booking.status !== "pending")) return res.status(404).json({ message: "Photo not found." });
+  // Only assigned driver or owning customer/admin may view item photos.
+  if (!canView(booking, req.user)) return res.status(403).json({ message: "Not allowed." });
+  const path = await import("node:path");
+  return res.sendFile(path.basename(booking.itemPhoto), { root: path.resolve("private-uploads") });
+}
+
+// Review request is saved INSIDE the cancelled booking, not in localStorage.
+export async function requestFeeWaiver(req, res) {
+  const booking = await Booking.findOne({ bookingCode: req.params.id, driverId: req.user._id, status: "cancelled", cancelledBy: "driver" });
+  if (!booking || !booking.cancellationFeeCentavos) return res.status(404).json({ message: "No eligible cancellation fee." });
+  if (booking.feeWaiver && booking.feeWaiver.status !== "none") return res.status(409).json({ message: "Review has already been requested." });
+  const reason = String(req.body.reason || "").trim();
+  if (reason.length < 5 || reason.length > 500) return res.status(400).json({ message: "Explain your request (5–500 characters)." });
+  booking.feeWaiver = { status: "pending", reason, proof: req.file ? req.file.filename : "", requestedAt: new Date() };
+  await booking.save();
+  return res.json({ booking: showBooking(booking, req.user) });
+}
+
+// Save a wallet movement only once. This is a demonstration ledger, NOT an actual payout.
+export async function settleWallet(booking) {
+  const wallet = await Wallet.findOne({ userId: booking.driverId });
+  if (!wallet || booking.walletSettledAt) return false;
+  const amount = booking.pricing.feeCentavos;
+  const commission = Math.round(amount * 0.15);
+  if (booking.payment.method === "cash") {
+    wallet.balanceCentavos -= commission;
+    wallet.transactions.push({ kind: "commission", amountCentavos: -commission, label: "Cash delivery commission", bookingCode: booking.bookingCode });
+  } else if (booking.payment.status === "paid") {
+    const earnings = amount - commission;
+    wallet.balanceCentavos += earnings;
+    wallet.transactions.push({ kind: "earnings", amountCentavos: earnings, label: "Online delivery earnings (admin confirmed)", bookingCode: booking.bookingCode });
+  } else return false;
+  // Atomic claim stops two requests from crediting this booking twice.
+  const claimed = await Booking.updateOne({ _id: booking._id, walletSettledAt: null }, { $set: { walletSettledAt: new Date() } });
+  if (!claimed.modifiedCount) return false;
+  await wallet.save();
+  return true;
+}
+
+// Report an incident WITHOUT cancelling the collected package delivery.
+export async function reportDeliveryIssue(req, res) {
+  const reason = String(req.body.reason || "").trim();
+  if (reason.length < 5 || reason.length > 500) return res.status(400).json({ message: "Explain the delivery issue (5–500 characters)." });
+  const booking = await Booking.findOne({ bookingCode: req.params.id, driverId: req.user._id, status: { $in: ["picked_up", "arrived"] } });
+  if (!booking) return res.status(409).json({ message: "You can report an issue only during an active, collected delivery." });
+  booking.deliveryIssue = { reason, reportedAt: new Date(), status: "open" };
+  await booking.save();
+  return res.json({ message: "Issue recorded. Contact the administrator to coordinate safe delivery or handover." });
 }

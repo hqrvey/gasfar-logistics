@@ -18,6 +18,8 @@ export const ROUTES = {
   driverNotifications: "/driver/notifications",
 
   dashboard: "/admin/dashboard",
+  adminNotifications: "/admin/notifications",
+  roles: "/admin/roles",
   users: "/admin/users",
   drivers: "/admin/drivers",
   deliveries: "/admin/deliveries",

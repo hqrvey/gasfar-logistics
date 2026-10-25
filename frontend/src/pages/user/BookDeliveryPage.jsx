@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { fareBreakdown } from "../../utils/pricing.js";
+import { extraService } from "../../services/extraService.js";
 import { FiArrowLeft, FiCheck, FiClock, FiMapPin, FiPlus, FiX, FiMaximize2, FiMinimize2, FiUpload } from "react-icons/fi";
 import { ArrowLeft, ArrowRight, Bike, Car, CarFront, CalendarDays, Check, CircleDollarSign, Clock, CreditCard, FileText, Hand, MapPin, Navigation, Package, Pill, Search, Shirt, Thermometer, TriangleAlert, Truck, Utensils, Van, Armchair, BookOpen, Cog, User, UserRound, ArrowUp, Droplets, Layers, Monitor, ShieldCheck, Zap } from "lucide-react";
 import { peso } from "../../utils/helpers.js";
@@ -16,7 +18,7 @@ import { MOCK_NOTIFICATIONS_USER } from "../../data/demo/clientMockData.js";
 // Options shown in the multi-step booking form.
 // Choices for this form. These are only used by BookDeliveryPage.
 
-const STEPS = ["Locations", "Schedule", "Recipient", "Package", "Payment", "Review"];
+const STEPS = ["Locations", "Schedule", "Recipient", "Package", "Review"];
 const VEHICLES = [
   { id: "motorcycle", label: "Motorcycle", sub: "Up to 20 kg", Icon: Bike },
   { id: "sedan", label: "Sedan", sub: "Up to 200 kg", Icon: Car },
@@ -44,11 +46,6 @@ const HANDLING = [
   { id: "fragile", label: "Fragile", Icon: TriangleAlert },
   { id: "temp", label: "Temp sensitive", Icon: Thermometer },
 ];
-const PAYMENT_METHODS = [
-  { id: "cash", label: "Cash", desc: "Pay on pickup", Icon: CircleDollarSign },
-  { id: "gcash", label: "GCash", desc: "via GCash wallet", Icon: CreditCard },
-  { id: "maya", label: "Maya", desc: "via Maya wallet", Icon: CreditCard },
-];
 const BOOKING_INITIAL = {
   pickup: null, dropoff: null, recipientName: "", recipientPhone: "", recipientUnit: "",
    scheduleType: "now", scheduleDate: "", scheduleTime: "", vehicleType: "", deliveryType: "", itemTypes: [], quantity: 1, itemWeight: "",
@@ -57,7 +54,25 @@ const BOOKING_INITIAL = {
 /* ═══ BookDeliveryPage ═══ */
 const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState(BOOKING_INITIAL);
+  const location = useLocation();
+  const repeated = location.state?.repeatBooking;
+  // Book Again copies the old route and parcel details, but does NOT submit automatically.
+  const [form, setForm] = useState(() => repeated ? {
+    ...BOOKING_INITIAL,
+    pickup: repeated.pickup,
+    dropoff: repeated.dropoff,
+    recipientName: repeated.recipientName || "",
+    recipientPhone: repeated.recipientPhone || "",
+    recipientUnit: repeated.recipientUnit || "",
+    vehicleType: repeated.vehicleTypeId || "",
+    deliveryType: repeated.deliveryType || "regular",
+    itemTypes: repeated.itemTypes || [],
+    quantity: repeated.quantity || 1,
+    notesToDriver: repeated.notesToDriver || "",
+    itemWeight: repeated.itemWeight || "",
+    paymentMethod: "cash",
+    paymentSide: "sender",
+  } : BOOKING_INITIAL);
   const [routeInfo, setRouteInfo] = useState(null);
   const [mapMode, setMapMode] = useState("pickup");
   const [mapExpanded, setMapExpanded] = useState(false);
@@ -70,6 +85,56 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
   const { user } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [bookingError, setBookingError] = useState("");
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [gpsMessage, setGpsMessage] = useState("");
+
+  // Same navigator.geolocation API used for real driver tracking, but here
+  // we request ONE location to fill the customer's pickup pin.
+  function useMyLocation() {
+    if (!navigator.geolocation) {
+      setGpsMessage("This device does not support location services.");
+      return;
+    }
+    setGpsLoading(true);
+    setGpsMessage("");
+    navigator.geolocation.getCurrentPosition(async function (position) {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      let address = lat.toFixed(5) + ", " + lng.toFixed(5);
+      try {
+        // Reverse-geocode the coordinate into a readable address.
+        const key = import.meta.env.VITE_GEOAPIFY_API_KEY;
+        if (key) {
+          const response = await fetch(`https://api.geoapify.com/v1/geocode/reverse?lat=${lat}&lon=${lng}&apiKey=${key}`);
+          if (response.ok) {
+            const data = await response.json();
+            address = data.features?.[0]?.properties?.formatted || address;
+          }
+        }
+      } catch (error) {
+        // The GPS pin remains usable even if address lookup fails.
+        console.warn("Reverse geocoding:", error.message);
+      }
+      handlePickup({ lat, lng, address });
+      setGpsLoading(false);
+    }, function (error) {
+      setGpsLoading(false);
+      setGpsMessage("Unable to get GPS: " + error.message);
+    }, { enableHighAccuracy: true, timeout: 15000 });
+  }
+
+  // Simple distance in metres between two geographic coordinates.
+  function pinDistanceMeters(a, b) {
+    if (!a || !b) return 0;
+    const radians = degrees => degrees * Math.PI / 180;
+    const latDistance = radians(b.lat - a.lat);
+    const lngDistance = radians(b.lng - a.lng);
+    const value = Math.sin(latDistance / 2) ** 2 + Math.cos(radians(a.lat)) * Math.cos(radians(b.lat)) * Math.sin(lngDistance / 2) ** 2;
+    return 6371000 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+  }
+  const locationsTooClose = form.pickup && form.dropoff && pinDistanceMeters(form.pickup, form.dropoff) < 100;
+  const [credit, setCredit] = useState(0);
+  useEffect(() => { extraService.myCredit().then(result => setCredit(result.creditCentavos / 100)).catch(() => {}); }, []);
 
   // Google Maps is not Leaflet: do not call invalidateSize().
   // Trigger a map resize when the map panel expands or collapses.
@@ -85,7 +150,8 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
   const toggle = (k, id) => setForm(f => ({ ...f, [k]: f[k].includes(id) ? f[k].filter(x => x !== id) : [...f[k], id] }));
 
   const isLocStep = step === 1;
-  const estimatedFee = routeInfo ? Math.round(parseFloat(routeInfo.distance) * 12 + 50) : null;
+  const estimate = routeInfo ? fareBreakdown(form.vehicleType, Number(routeInfo.distance), form.deliveryType) : null;
+  const estimatedFee = estimate ? estimate.total : null;
 
   const handlePickup = (pin) => { set("pickup", pin); setMapMode("dropoff"); };
   const handleDropoff = (pin) => { set("dropoff", pin); setMapMode("pickup"); };
@@ -128,6 +194,12 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
       });
       // The MongoDB booking now exists. Show its public order reference.
       setConfirmedId(result.booking.id);
+      // Optional parcel photo is a second FormData request. It is stored
+      // as a private server upload, not browser localStorage/base64.
+      if (form.itemPhoto instanceof File) {
+        try { await bookingService.attachPhoto(result.booking.id, form.itemPhoto); }
+        catch (photoError) { alert("Booking saved, but photo upload failed: " + photoError.message); }
+      }
       // Express sends back the price it actually calculated using Geoapify.
       setConfirmedPrice(result.booking.price);
       setShowSuccess(true);
@@ -143,14 +215,13 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
   const useSaved = (addr) => { const pin = { lat: addr.lat, lng: addr.lng, address: addr.address }; if (showSavedPicker === "pickup") handlePickup(pin); else handleDropoff(pin); setShowSavedPicker(null); };
   const useMapPicker = () => { setMapMode(showSavedPicker); setShowSavedPicker(null); };
 
-  const EYEBROWS = ["Set Locations", "Schedule", "Recipient", "Package Details", "Payment", "Review & Confirm"];
-  const TITLES = ["Where to?", "When should we pick it up?", "Who's receiving it?", "What are you sending?", "How will this be paid?", "Looks good?"];
+  const EYEBROWS = ["Set Locations", "Schedule", "Recipient", "Package Details", "Review & Confirm"];
+  const TITLES = ["Where to?", "When should we pick it up?", "Who's receiving it?", "What are you sending?", "Looks good?"];
   const DESCS = [
     "Search or pin your pickup and drop-off locations on the map.",
     "Send it right now, or schedule for later.",
     "Tell us who will receive the package at the drop-off.",
     "Tell us about your package and any handling requirements.",
-    "Choose a payment method and who covers the delivery fee.",
     "Review your booking details before confirming.",
   ];
 
@@ -170,10 +241,15 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
                 <div className="bd-sec">
                   <div className="bd-sec-label">Locations</div>
                   <LocCard type="pickup" pin={form.pickup} onEdit={() => setShowSavedPicker("pickup")} />
+                  <button type="button" className="feature-secondary" onClick={useMyLocation} disabled={gpsLoading}>
+                    <Navigation size={15} /> {gpsLoading ? "Getting your position…" : "Use my current location for pickup"}
+                  </button>
+                  {gpsMessage && <p role="status" className="feature-mini">{gpsMessage}</p>}
+                  {locationsTooClose && <p className="feature-error">Pickup and drop-off must be at least 100 metres apart.</p>}
                   <LocCard type="dropoff" pin={form.dropoff} onEdit={() => setShowSavedPicker("dropoff")} />
                   {routeInfo && (<div className="bd-route-info"><span><strong>{routeInfo.distance} km</strong> distance</span><span><strong>~{routeInfo.durationLabel}</strong> estimated</span></div>)}
                 </div>
-                <div className="bd-actions"><button className="btn-bd-next" onClick={() => setStep(2)} type="button" disabled={!form.pickup || !form.dropoff}>Continue <ArrowRight size={14} /></button></div>
+                <div className="bd-actions"><button className="btn-bd-next" onClick={() => setStep(2)} type="button" disabled={!form.pickup || !form.dropoff || locationsTooClose}>Continue <ArrowRight size={14} /></button></div>
               </div>
             )}
 
@@ -262,16 +338,6 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
             )}
 
             {step === 5 && (
-              <div className="bd-step-body bd-step-body--lg">
-                <div className="bd-sec"><div className="bd-sec-label">Payment method</div><div className="bd-grid-3">{PAYMENT_METHODS.map(m => (<SqCard key={m.id} selected={form.paymentMethod === m.id} onClick={() => set("paymentMethod", m.id)} Icon={m.Icon} label={m.label} sub={m.desc} />))}</div></div>
-                <div className="bd-sec"><div className="bd-sec-label">Who pays?</div><div className="bd-grid-2"><SqCard selected={form.paymentSide === "sender"} onClick={() => set("paymentSide", "sender")} Icon={User} label="Sender" sub="I'll pay" /><SqCard selected={form.paymentSide === "recipient"} onClick={() => set("paymentSide", "recipient")} Icon={UserRound} label="Recipient" sub="They'll pay" /></div></div>
-                {estimatedFee !== null && (<div className="bd-fee"><div><div className="bd-fee__label">Estimated fee</div><div className="bd-fee__meta">{routeInfo?.distance} km · ~{routeInfo?.durationLabel}</div></div><div className="bd-fee__value">{peso(estimatedFee)}</div></div>)}
-                <div className="bd-secure"><ShieldCheck size={14} /><span>Payment is collected on pickup or delivery. Final fee may vary based on actual route.</span></div>
-                <div className="bd-actions"><button className="btn-bd-back" type="button" onClick={() => setStep(4)}><ArrowLeft size={14} /> Back</button><button className="btn-bd-next" type="button" onClick={() => setStep(6)}>Review booking <ArrowRight size={14} /></button></div>
-              </div>
-            )}
-
-            {step === 6 && (
               <div className="bd-step-body bd-step-body--sm">
                 <ReviewGroup title="Locations" Icon={MapPin}>
                   <RR label="Pickup" value={form.pickup?.address} />
@@ -290,13 +356,22 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
                   {form.notesToDriver && <RR label="Notes" value={form.notesToDriver} />}
                 </ReviewGroup>
                 <ReviewGroup title="Payment" Icon={CreditCard}>
-                  <RR label="Method" value={form.paymentMethod.charAt(0).toUpperCase() + form.paymentMethod.slice(1)} />
-                  <RR label="Payer" value={form.paymentSide === "sender" ? "Sender (you)" : "Recipient"} />
-                  {estimatedFee !== null && <RR label="Est. fee" value={peso(estimatedFee)} price />}
+                  <RR label="Method" value="Cash (collected by driver after pickup)" />
+                  <RR label="Payer" value="Sender" />
+                  {estimate && <>
+                    <RR label="Base fare" value={peso(estimate.base)} />
+                    <RR label="First distance tier" value={peso(estimate.firstKm)} />
+                    <RR label="Remaining distance" value={peso(estimate.extraKm)} />
+                    {estimate.priority > 0 && <RR label="Priority surcharge (20%)" value={peso(estimate.priority)} />}
+                    <RR label="Estimated total" value={peso(estimate.total)} price />
+                    {credit > 0 && <RR label="Available cancellation credit" value={peso(Math.min(credit, estimate.total))} />}
+                    {credit > 0 && <RR label="Estimated amount due" value={peso(Math.max(0, estimate.total-credit))} price />}
+                  </>}
                 </ReviewGroup>
                 {bookingError && <p role="alert" style={{ color: "#b42318", marginBottom: 12 }}>{bookingError}</p>}
-                <div className="bd-safe-note"><ShieldCheck size={13} /> Your details are safe and secure with GASFAR.</div>
-                <div className="bd-actions bd-actions--review"><button className="btn-bd-back" type="button" onClick={() => setStep(5)}><ArrowLeft size={14} /> Back</button><button className="btn-bd-book" type="button" onClick={handleConfirm} disabled={submitting}><Check size={14} /> {submitting ? "Saving booking…" : "Confirm booking"}</button></div>
+                <div className="bd-safe-note"><ShieldCheck size={13} /> Final amount is recalculated by the backend using the full driving route.</div>
+
+                <div className="bd-actions bd-actions--review"><button className="btn-bd-back" type="button" onClick={() => setStep(4)}><ArrowLeft size={14} /> Back</button><button className="btn-bd-book" type="button" onClick={handleConfirm} disabled={submitting}><Check size={14} /> {submitting ? "Saving booking…" : "Confirm booking"}</button></div>
               </div>
             )}
           </div>

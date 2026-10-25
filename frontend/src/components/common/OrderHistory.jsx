@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { bookingService } from "../../services/bookingService.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { ArrowLeft, Check, Star } from "lucide-react";
@@ -207,7 +208,34 @@ function HistoryCard({ order, role, onExpand }) {
   );
 }
 
+// A fee appeal belongs in delivery history, so this form stays in this file.
+// FormData can carry the reason and an optional JPG/PNG proof attachment.
+function FeeWaiverRequest({ order }) {
+  const [reason, setReason] = useState("");
+  const [proof, setProof] = useState(null);
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const status = order.feeWaiver?.status;
+  if (status && status !== "none") return <p className="feature-mini">Fee appeal: <strong>{status}</strong></p>;
+  return <div className="feature-panel">
+    <h4>Request cancellation-fee waiver (₱{order.cancellationFee})</h4>
+    <p className="feature-mini">Describe the emergency or issue. Admin will review your request.</p>
+    <textarea className="field__textarea" value={reason} maxLength={300} onChange={e => setReason(e.target.value)} placeholder="Reason for appeal" />
+    <label className="feature-file-row">Attach optional JPG/PNG proof
+      <input type="file" accept="image/jpeg,image/png" onChange={e => setProof(e.target.files[0])}/>
+    </label>
+    {message && <p role="status">{message}</p>}
+    <button className="feature-primary" disabled={busy || reason.trim().length < 5} onClick={async () => {
+      setBusy(true);
+      try { await bookingService.requestFeeWaiver(order.id, reason.trim(), proof); setMessage("Request submitted to admin. Refresh history to see the decision."); }
+      catch (error) { setMessage(error.message); }
+      finally { setBusy(false); }
+    }}>{busy ? "Sending…" : "Submit fee appeal"}</button>
+  </div>;
+}
+
 function HistoryDetailsPanel({ order, role, onBack, review, onSubmitReview }) {
+  const navigate = useNavigate();
   const personName = role === "driver"
     ? order.customerName
     : order.driver?.name || order.driverName || "No driver assigned";
@@ -274,6 +302,9 @@ function HistoryDetailsPanel({ order, role, onBack, review, onSubmitReview }) {
           </div>
         )}
       </div>
+      {role === "customer" && <button type="button" className="feature-primary" onClick={() => navigate("/place-order", { state: { repeatBooking: order } })}>Book Again (review details first)</button>}
+      {role === "driver" && order.cancellationFee > 0 && <FeeWaiverRequest order={order} />}
+      <div className="feature-mini">Payment: {order.paymentMethod} ({order.paymentSide}) · Amount due: ₱{order.amountDue ?? (order.feeCentavos / 100)} {order.cashCollectedAt ? "· Cash confirmed" : ""}</div>
       {groupOf(order.status) === "completed" && (
         <UserReviewCard
           order={{ ...order, driverName }}

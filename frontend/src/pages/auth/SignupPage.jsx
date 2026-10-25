@@ -1,3 +1,4 @@
+import { useAuth } from "../../context/AuthContext.jsx";
 import React, { useEffect, useState } from "react";
 import { authService } from "../../services/authService.js";
 import { FiClock, FiFile, FiLock, FiMail, FiPackage, FiPhone, FiTruck, FiUser, FiChevronDown } from "react-icons/fi";
@@ -71,15 +72,6 @@ const PersonalInfoStep = ({ data, errors, onChange, role, onNext, onBack }) => (
         </div>
       </div>
       <PhoneInput value={data.phone} onChange={(v) => onChange("phone", v)} error={errors.phone} />
-      <div className="input-group">
-        <label className="input-label">Email <span className="optional">(optional)</span></label>
-        <div className="input-wrapper">
-          <span className="input-icon-left"><FiMail size={17} /></span>
-          <input className={`input-field ${errors.email ? "input-error" : ""}`}
-            style={{ paddingLeft: "2.5rem" }} type="email" placeholder="your@email.com"
-            value={data.email} onChange={(e) => onChange("email", e.target.value)} />
-        </div>
-      </div>
       <div className="step-btn-row">
         <button type="button" className="btn-signin" onClick={onNext}>Next</button>
         <button type="button" className="btn-back" onClick={onBack}>Back</button>
@@ -259,6 +251,7 @@ const SignupPage = () => {
   const [errors, setErrors] = useState({});
   const [verificationToken, setVerificationToken] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [signupComplete, setSignupComplete] = useState(false);
   const [toast, setToast] = useState({ message: "", id: 0 });
   const update = (key, val) => setData((d) => ({ ...d, [key]: val }));
   const updateDoc = (key, val) => setDocs((d) => ({ ...d, [key]: val }));
@@ -288,7 +281,7 @@ const STEPS = SIGNUP_STEPS[role] || SIGNUP_STEPS.customer;
     if (!data.firstName.trim()) e.firstName = "First name is required.";
     if (!data.lastName.trim()) e.lastName = "Last name is required.";
     if (!/^9\d{9}$/.test(data.phone)) e.phone = "Enter a valid 10-digit Philippine mobile number.";
-    if (data.email && !isValidEmail(data.email)) e.email = "Enter a valid email address.";
+    
     setErrors(e); const first = Object.values(e)[0]; if (first) showToast(first); return Object.keys(e).length === 0;
   };
   const validatePassword = () => {
@@ -314,7 +307,9 @@ const STEPS = SIGNUP_STEPS[role] || SIGNUP_STEPS.customer;
         profilePhoto: docs.profilePhoto, license: docs.license, or: docs.or,
         cr: docs.cr, backplate: docs.backplate,
       } : null);
-      window.location.href = role === "driver" ? "/application-pending" : "/login";
+      // Show a confirmation first. The account is already saved in MongoDB.
+      // For drivers, approval remains pending until an admin reviews documents.
+      setSignupComplete(true);
     } catch (error) {
       showToast(error.message);
     } finally {
@@ -353,11 +348,16 @@ const STEPS = SIGNUP_STEPS[role] || SIGNUP_STEPS.customer;
       <section className="signup-page__right">
         <div className="signup-page__card">
           <Toast message={toast.message} onClose={dismissToast} />
-          {step === 0 && <RoleStep onChoose={handleChooseRole} />}
-          {step === 1 && <PersonalInfoStep data={data} errors={errors} onChange={update} role={role} onNext={handlePersonalNext} onBack={handleBackToRoleSelect} />}
-          {step === 2 && <VerificationStep phone={data.phone} onVerified={handleVerified} onBack={() => setStep(1)} showToast={showToast} />}
-          {step === 3 && <PasswordStep data={data} errors={errors} onChange={update} onSubmit={handlePasswordSubmit} onBack={() => setStep(2)} buttonLabel={submitting ? "Submitting…" : (role === "driver" ? "Next" : "Sign Up")} />}
-          {step === 4 && role === "driver" && <DocumentsStep docs={docs} onChange={updateDoc} onSubmit={handleDocumentsSubmit} onBack={() => setStep(3)} showToast={showToast} />}
+          {signupComplete ? <div className="feature-signup-success" role="status">
+            <h2>Account created successfully!</h2>
+            <p>{role === "driver" ? "Your driver application is pending admin verification." : "Your customer account is ready. You can now log in."}</p>
+            <a href={role === "driver" ? "/application-pending" : "/login"} className="btn-signin">Continue</a>
+          </div> : null}
+          {!signupComplete && step === 0 && <RoleStep onChoose={handleChooseRole} />}
+          {!signupComplete && step === 1 && <PersonalInfoStep data={data} errors={errors} onChange={update} role={role} onNext={handlePersonalNext} onBack={handleBackToRoleSelect} />}
+          {!signupComplete && step === 2 && <VerificationStep phone={data.phone} onVerified={handleVerified} onBack={() => setStep(1)} showToast={showToast} />}
+          {!signupComplete && step === 3 && <PasswordStep data={data} errors={errors} onChange={update} onSubmit={handlePasswordSubmit} onBack={() => setStep(2)} buttonLabel={submitting ? "Submitting…" : (role === "driver" ? "Next" : "Sign Up")} />}
+          {!signupComplete && step === 4 && role === "driver" && <DocumentsStep docs={docs} onChange={updateDoc} onSubmit={handleDocumentsSubmit} onBack={() => setStep(3)} showToast={showToast} />}
         </div>
         <footer className="login-panel__footer">© 2026 GASFAR. All rights reserved.</footer>
       </section>
@@ -366,7 +366,10 @@ const STEPS = SIGNUP_STEPS[role] || SIGNUP_STEPS.customer;
   </div>
 );
 };
-const ApplicationPendingPage = () => (
+const ApplicationPendingPage = () => {
+  const { user } = useAuth();
+  const rejected = user?.driverVerificationStatus === "rejected";
+  return (
   <div className="signup-page">
     <div className="signup-page__inner">
 
@@ -398,11 +401,9 @@ const ApplicationPendingPage = () => (
         <div className="signup-page__card pending-card">
           <div className="pending-icon"><FiClock size={40} /></div>
           <div className="login-form-card__header">
-            <h1 className="login-form-card__title">Application Submitted</h1>
+            <h1 className="login-form-card__title">{rejected ? "Application Needs Attention" : "Application Submitted"}</h1>
             <p className="login-form-card__subtitle">
-              Thanks for signing up as a driver! We're reviewing your documents.
-              You'll get a notification once your account is approved — this usually
-              takes 1–2 business days.
+              {rejected ? "Your application was not approved. Contact an administrator about your documents or the next steps." : "Your documents are awaiting administrator approval. You can sign in to check your status, but cannot accept deliveries yet."}
             </p>
           </div>
 
@@ -432,7 +433,7 @@ const ApplicationPendingPage = () => (
 
     </div>
   </div>
-);
-
+  );
+};
 
 export { SignupPage, ApplicationPendingPage };

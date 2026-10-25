@@ -1,5 +1,6 @@
+import useDriverWallet from "../../hooks/useDriverWallet.js";
 import { useAuth } from "../../context/AuthContext.jsx";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { FiEdit2, FiLock, FiMail, FiPhone, FiTrash2, FiTruck, FiUser, FiX } from "react-icons/fi";
 import { BadgeCheck, Bike, Car, CarFront, ShieldCheck, Star, TrendingUp, Truck, Van } from "lucide-react";
 import { InputField, PhoneInput, FileUpload, VehicleSelect } from "../../components/common/FormComponents.jsx";
@@ -9,6 +10,7 @@ import { useBookings } from "../../hooks/useBookings.js";
 import { MOCK_DRIVER, MOCK_NOTIFICATIONS_DRIVER } from "../../data/demo/clientMockData.js";
 import { SqCard, Field } from "../../components/common/BookingUI.jsx";
 import { peso } from "../../utils/helpers.js";
+import { extraService } from "../../services/extraService.js";
 
 const VEHICLES = [
   { id: "motorcycle", label: "Motorcycle", sub: "Up to 20 kg", Icon: Bike },
@@ -70,6 +72,7 @@ const ChangeVehicleModal = ({ current, onClose, onSubmit }) => {
               type,
               plate: plate.trim(),
               capacity: VEHICLES.find(v => v.id === type)?.sub?.replace("Up to ", "") || "—",
+              files: { or, cr, backplate },
             })}>
             Submit for Review
           </button>
@@ -78,6 +81,47 @@ const ChangeVehicleModal = ({ current, onClose, onSubmit }) => {
     </div>
   );
 };
+
+// Driver document renewal stays in this file because it is part of the profile page.
+function DriverDocumentRenewal({ profile, onSaved }) {
+  const [files, setFiles] = useState({});
+  const [dates, setDates] = useState({});
+  const [reason, setReason] = useState("");
+  const [message, setMessage] = useState("");
+  const [working, setWorking] = useState(false);
+  async function submit() {
+    if (!Object.keys(files).length && !reason.trim()) return setMessage("Choose at least one document.");
+    const form = new FormData();
+    for (const field of Object.keys(files)) { if (files[field]) form.append(field, files[field]); }
+    for (const field of Object.keys(dates)) { if (dates[field]) form.append(field, dates[field]); }
+    form.append("reason", reason);
+    setWorking(true);
+    try { await extraService.submitRenewal(form); setMessage("Request sent to admin for review."); onSaved(); }
+    catch (e) { setMessage(e.message); }
+    finally { setWorking(false); }
+  }
+  const expiry = (value) => {
+    if (!value) return "Expiry not provided";
+    const days = Math.ceil((new Date(value).getTime() - Date.now()) / 86400000);
+    if (days < 0) return "Expired";
+    if (days <= 7) return `Expires in ${days} days`;
+    return new Date(value).toLocaleDateString("en-PH");
+  };
+  return <div className="feature-panel">
+    <h3>Document Renewals</h3>
+    <p className="feature-mini">Your existing approved documents remain active until the administrator accepts a replacement.</p>
+    <p>Review status: <strong>{profile?.renewal?.status || "none"}</strong></p>
+    {[{key: "license", label: "Driver's License", date: "licenseExpiresAt"}, {key: "or", label: "Vehicle OR", date: "orExpiresAt"}, {key: "cr", label: "Vehicle CR"}, {key: "backplate", label: "Vehicle Backplate"}].map(item => <div key={item.key} className="feature-file-row">
+      <label><strong>{item.label}</strong> {item.date && <small>{expiry(profile?.[item.date])}</small>}
+        <input type="file" accept="image/jpeg,image/png,application/pdf" onChange={e => setFiles(current => ({ ...current, [item.key]: e.target.files[0] }))}/>
+      </label>
+      {item.date && <label>New expiry <input type="date" onChange={e => setDates(current => ({ ...current, [item.date]: e.target.value }))}/></label>}
+    </div>)}
+    <textarea className="field__textarea" value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason for replacement (optional)" />
+    {message && <p role="status">{message}</p>}
+    <button type="button" className="feature-primary" disabled={working || profile?.renewal?.status === "pending"} onClick={submit}>{working ? "Submitting…" : "Submit documents for approval"}</button>
+  </div>;
+}
 
 const DriverStatsTab = ({ myReviews, avgRating }) => {
   const totalReviews = myReviews.length;
@@ -157,15 +201,32 @@ const DriverStatsTab = ({ myReviews, avgRating }) => {
 };
 
 const DriverProfilePage = () => {
+  const walletBalance = useDriverWallet();
+  const [driverProfile, setDriverProfile] = useState(null);
+  async function loadDriverProfile() {
+    try { setDriverProfile((await extraService.driverProfile()).profile); }
+    catch (problem) { console.warn("Driver profile unavailable:", problem.message); }
+  }
+  useEffect(() => { loadDriverProfile(); }, []);
   const [activeTab, setActiveTab] = useState("profile");
-  const [info, setInfo] = useState({ username: "pedros", firstName: "Pedro", lastName: "Santos", email: MOCK_DRIVER.email, phone: MOCK_DRIVER.phone, photo: null });
+  const [info, setInfo] = useState({ username: "", firstName: "", lastName: "", email: "", phone: "", photo: null });
   const [draft, setDraft] = useState(info);
   const [editing, setEditing] = useState(false);
   const [vehicle, setVehicle] = useState(MOCK_DRIVER.vehicle);
   const [showVehicleChange, setShowVehicleChange] = useState(false);
 
   const { bookings } = useBookings();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
+  useEffect(() => {
+    if (!user) return;
+    const next = { username: user.username || "", firstName: user.firstName || "", lastName: user.lastName || "", email: user.email || "", phone: user.phone || "", photo: user.hasProfilePhoto ?
+      (import.meta.env.VITE_API_URL || "http://localhost:5001/api") + "/extra/me/photo?changed=" + Date.now() : null };
+    setInfo(next); setDraft(next);
+  }, [user]);
+  useEffect(() => {
+    if (!driverProfile) return;
+    setVehicle({ ...driverProfile.vehicle, plate: driverProfile.vehicle?.plateNumber || "" });
+  }, [driverProfile]);
   // The customer's review is now stored in booking.review inside MongoDB.
   // GET /api/bookings returns the driver's own completed bookings and reviews.
   // This also works across different browsers and different devices.
@@ -188,8 +249,19 @@ const DriverProfilePage = () => {
 
   const startEdit = () => { setDraft(info); setEditing(true); };
   const cancelEdit = () => { setDraft(info); setEditing(false); };
-  const saveEdit = () => { setInfo(draft); setEditing(false); alert("Profile updated! (mock)"); };
-  const updatePhoto = (file) => setInfo((s) => ({ ...s, photo: file }));
+  const saveEdit = async () => {
+    try {
+      await extraService.saveProfile({ username: draft.username, firstName: draft.firstName, lastName: draft.lastName, email: draft.email });
+      await refreshUser(); setEditing(false);
+      alert("Profile saved in MongoDB.");
+    } catch (problem) { alert(problem.message); }
+  };
+  const updatePhoto = async (file) => {
+    try {
+      await extraService.updateProfilePhoto(file);
+      await refreshUser(); // The image is now stored on the server, not just React.
+    } catch (problem) { alert(problem.message); }
+  };
   const tabs = [
     { id: "profile", label: "Profile Info", Icon: FiUser },
     { id: "stats", label: "Reviews", Icon: TrendingUp },
@@ -199,9 +271,9 @@ const DriverProfilePage = () => {
   ];
   const header = (
     <>
-      <div className="profile-avatar profile-avatar--driver">{info.photo ? <img src={URL.createObjectURL(info.photo)} alt={info.firstName} /> : <span>{info.firstName.charAt(0)}{info.lastName.charAt(0)}</span>}</div>
+      <div className="profile-avatar profile-avatar--driver">{info.photo ? <img src={(typeof info.photo === "string" ? info.photo : URL.createObjectURL(info.photo))} alt={info.firstName} /> : <span>{info.firstName.charAt(0)}{info.lastName.charAt(0)}</span>}</div>
       <div className="profile-header-info">
-        <h2 className="profile-header-name">{info.firstName} {info.lastName}{MOCK_DRIVER.verified && <span className="profile-verified" title="Verified"><BadgeCheck size={16} /></span>}</h2>
+        <h2 className="profile-header-name">{info.firstName} {info.lastName}{driverProfile?.verificationStatus === "approved" && <span className="profile-verified" title="Verified"><BadgeCheck size={16} /></span>}</h2>
         <p className="profile-header-meta">@{info.username} · {VEHICLES.find(v => v.id === vehicle.type)?.label || "Motorcycle"}</p>
         <div className="profile-rating">
           <Star size={14} fill="#F47B20" color="#F47B20" />
@@ -213,7 +285,7 @@ const DriverProfilePage = () => {
   );
   return (
     <div className="driver-shell">
-      <AppHeader role="driver" user={{ name: `${info.firstName} ${info.lastName}` }} notifications={MOCK_NOTIFICATIONS_DRIVER} online={MOCK_DRIVER.online} onToggleOnline={() => alert("Toggle online/offline (mock)")} walletBalance={MOCK_DRIVER.walletBalance} minBalance={MOCK_DRIVER.minBalance} profilePath="/driver/profile" showOnlineToggle={false} />
+      <AppHeader role="driver" user={{ name: `${info.firstName} ${info.lastName}` }} notifications={MOCK_NOTIFICATIONS_DRIVER} online={MOCK_DRIVER.online} onToggleOnline={() => alert("Toggle online/offline (mock)")} walletBalance={walletBalance} minBalance={25} profilePath="/driver/profile" showOnlineToggle={false} />
       <div className="driver-body">
         <div className="profile-page-wrap">
           <ProfileLayout header={header} tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab}>
@@ -226,7 +298,8 @@ const DriverProfilePage = () => {
                   <Field label="Last name"><input className="field__input" value={draft.lastName} disabled={!editing} onChange={(e) => setDraft({ ...draft, lastName: e.target.value })} /></Field>
                 </div>
                 <PhoneInput label="Mobile number" value={draft.phone} onChange={(v) => setDraft({ ...draft, phone: v })} disabled />
-                <InputField id="email" label="Email" type="email" icon={FiMail} value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} disabled={!editing} />
+                <p className="feature-mini">Optional linked email is not verified for password recovery.</p>
+                <InputField id="email" label="Linked email (unverified)" type="email" icon={FiMail} value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} disabled={!editing} />
 
                 {editing ? (<div className="profile-actions"><button className="btn-profile-ghost" onClick={cancelEdit}>Cancel</button><button className="btn-profile-primary" onClick={saveEdit}>Save Changes</button></div>) : (<button className="btn-profile-primary" onClick={startEdit}><FiEdit2 size={14} /> Edit Profile</button>)}
               </div>
@@ -247,7 +320,8 @@ const DriverProfilePage = () => {
                   </div>
                   <span className="vehicle-card__status vehicle-card__status--active">Active</span>
                 </div>
-                <button className="btn-profile-secondary" onClick={() => setShowVehicleChange(true)}><FiEdit2 size={14} /> Change Vehicle</button>
+                <button className="btn-profile-secondary" onClick={() => setShowVehicleChange(true)}><FiEdit2 size={14} /> Request Vehicle Change</button>
+                <DriverDocumentRenewal profile={driverProfile} onSaved={loadDriverProfile} />
               </div>
             )}
             {activeTab === "password" && <ChangePasswordTab />}
@@ -255,9 +329,6 @@ const DriverProfilePage = () => {
               <DeleteAccountTab
                 role="driver"
                 onDelete={() => {
-                  localStorage.removeItem("gasfar_bookings_v1");
-                  localStorage.removeItem("gasfar_reviews_v1");
-                  alert("Your driver account has been deleted. Redirecting to login…");
                   window.location.href = "/login";
                 }}
               />
@@ -265,7 +336,15 @@ const DriverProfilePage = () => {
           </ProfileLayout>
         </div>
       </div>
-      {showVehicleChange && (<ChangeVehicleModal current={vehicle} onClose={() => setShowVehicleChange(false)} onSubmit={(v) => { setVehicle((prev) => ({ ...prev, ...v })); setShowVehicleChange(false); alert("Vehicle change submitted for review (mock). You'll be offline until approved."); }} />)}
+      {showVehicleChange && (<ChangeVehicleModal current={vehicle} onClose={() => setShowVehicleChange(false)} onSubmit={async (v) => {
+        const form = new FormData();
+        form.append("vehicleType", v.type); form.append("plateNumber", v.plate);
+        for (const field of ["or", "cr", "backplate"]) {
+          if (v.files[field]) form.append(field, v.files[field]);
+        }
+        try { await extraService.submitRenewal(form); setShowVehicleChange(false); await loadDriverProfile(); alert("Vehicle change submitted for admin approval."); }
+        catch (error) { alert(error.message); }
+      }} />)}
     </div>
   );
 };

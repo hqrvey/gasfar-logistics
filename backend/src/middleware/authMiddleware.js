@@ -31,13 +31,8 @@ export async function requireAuth(req, res, next) {
       return res.status(401).json({ message: "Session no longer valid." });
     }
 
-    // A driver account must also have an approved driver profile.
-    if (user.role === "driver") {
-      const profile = await DriverProfile.findOne({ userId: user._id });
-      if (!profile || profile.verificationStatus !== "approved") {
-        return res.status(403).json({ message: "Driver account is not approved." });
-      }
-    }
+    // Drivers can sign in and read their verification status, even if pending.
+    // Only requireApprovedDriver permits delivery-changing requests.
 
     req.user = user; // Now controllers can read req.user._id and req.user.role.
     next(); // Run the next middleware or the controller.
@@ -56,4 +51,56 @@ export function allowRoles(...roles) {
     }
     next();
   };
+}
+
+// Used ONLY on routes that a driver must be approved to perform.
+export async function requireApprovedDriver(req, res, next) {
+  if (req.user.role !== "driver") return next();
+  try {
+    const profile = await DriverProfile.findOne({ userId: req.user._id });
+    if (!profile || profile.verificationStatus !== "approved") return res.status(403).json({ message: "Driver approval is required for deliveries." });
+    for (const date of [profile.licenseExpiresAt, profile.orExpiresAt]) {
+      if (date && date.getTime() < Date.now()) return res.status(403).json({ message: "Renew expired driver documents before accepting work." });
+    }
+    next();
+  } catch (error) { return res.status(500).json({ message: "Could not check driver approval." }); }
+}
+
+
+// Moderator permissions: Express checks these on EVERY protected request.
+// React hiding a button is useful for navigation, but is NOT authorization.
+export function allowAdminSections(...sections) {
+  return function (req, res, next) {
+    if (!req.user || req.user.role !== "admin") {
+      return res.status(403).json({ message: "Administrator access required." });
+    }
+
+    // Existing admins created before this change have no adminRole field.
+    // Treat those trusted admin accounts as super admins for compatibility.
+    const adminRole = req.user.adminRole || "super_admin";
+    if (adminRole === "super_admin") return next();
+
+    const allowed = {
+      user_moderator: ["users"],
+      driver_moderator: ["drivers"],
+      fee_moderator: ["fees"],
+    };
+    const roleSections = allowed[adminRole] || [];
+    const permitted = sections.some(section => roleSections.includes(section));
+    if (!permitted) {
+      return res.status(403).json({ message: "Your moderator role does not allow this action." });
+    }
+    next();
+  };
+}
+
+// This middleware is used for the Moderator Accounts screen only.
+export function requireSuperAdmin(req, res, next) {
+  if (!req.user || req.user.role !== "admin") {
+    return res.status(403).json({ message: "Administrator access required." });
+  }
+  if (req.user.adminRole && req.user.adminRole !== "super_admin") {
+    return res.status(403).json({ message: "Super administrator access required." });
+  }
+  next();
 }

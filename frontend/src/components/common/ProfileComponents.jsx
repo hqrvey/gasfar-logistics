@@ -1,4 +1,6 @@
 import React, { useRef, useState } from "react";
+import { extraService } from "../../services/extraService.js";
+import { useAuth } from "../../context/AuthContext.jsx";
 import { FiArrowRight, FiBriefcase, FiCamera, FiChevronDown, FiEye, FiEyeOff, FiHome, FiLock, FiMail, FiMapPin as FiMapPinOutline, FiPhone, FiTrash2, FiUpload, FiUser, FiX } from "react-icons/fi";
 import { Check, MapPin, ShieldCheck, TriangleAlert } from "lucide-react";
 import { InputField, FileUpload, PasswordStrength, PhoneInput } from "./FormComponents.jsx";
@@ -23,7 +25,7 @@ const PhotoUploader = ({ photo, fallback, onUpload, editable = false }) => {
   return (
     <div className="photo-uploader">
       <button type="button" className={`photo-uploader__avatar ${editable ? "photo-uploader__avatar--editable" : ""}`} onClick={() => editable && inputRef.current?.click()} disabled={!editable} aria-label={editable ? "Change profile photo" : undefined} title={editable ? "Change profile photo" : undefined}>
-        {photo ? <img src={URL.createObjectURL(photo)} alt="Profile" /> : <span className="photo-uploader__fallback">{fallback}</span>}
+        {photo ? <img src={typeof photo === "string" ? photo : URL.createObjectURL(photo)} alt="Profile" /> : <span className="photo-uploader__fallback">{fallback}</span>}
         {editable && (<span className="photo-uploader__camera"><FiCamera size={14} /></span>)}
       </button>
       <input ref={inputRef} type="file" accept="image/jpeg,image/png" hidden onChange={(e) => { handleFile(e.target.files[0]); e.target.value = ""; }} />
@@ -36,23 +38,30 @@ const ChangePasswordTab = () => {
   const [confirm, setConfirm] = useState("");
   const [errors, setErrors] = useState({});
   const [done, setDone] = useState(false);
-  const submit = () => {
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
     const e = {};
     if (!cur) e.cur = "Current password is required.";
-    if (!pw || pw.length < 3) e.pw = "New password must be at least 3 characters.";
+    if (!pw || pw.length < 8) e.pw = "New password must be at least 8 characters.";
     if (pw !== confirm) e.confirm = "Passwords do not match.";
     setErrors(e);
     if (Object.keys(e).length > 0) return;
-    setDone(true);
-    setTimeout(() => { window.location.href = "/login"; }, 1200);
+    // Express compares the OLD password to the stored hash; React does not.
+    setBusy(true);
+    try {
+      await extraService.changePassword(cur, pw);
+      setDone(true);
+      setCur(""); setPw(""); setConfirm("");
+    } catch (problem) { setErrors({ cur: problem.message }); }
+    finally { setBusy(false); }
   };
-  if (done) return <div className="profile-inline-success"><Check size={16} /> Password updated. Redirecting to login…</div>;
+  if (done) return <div className="profile-inline-success"><Check size={16} /> Password updated successfully.</div>;
   return (
     <div className="profile-form">
       <InputField id="cur-pw" label={<>Current Password <span className="required">*</span></>} type="password" placeholder="Enter current password" icon={FiLock} value={cur} onChange={(e) => setCur(e.target.value)} error={errors.cur} />
-      <div className="input-group"><InputField id="new-pw" label={<>New Password <span className="required">*</span></>} type="password" placeholder="3–30 characters" icon={FiLock} value={pw} onChange={(e) => setPw(e.target.value)} error={errors.pw} /><PasswordStrength password={pw} /></div>
+      <div className="input-group"><InputField id="new-pw" label={<>New Password <span className="required">*</span></>} type="password" placeholder="At least 8 characters" icon={FiLock} value={pw} onChange={(e) => setPw(e.target.value)} error={errors.pw} /><PasswordStrength password={pw} /></div>
       <InputField id="confirm-pw" label={<>Confirm New Password <span className="required">*</span></>} type="password" placeholder="Re-enter new password" icon={FiLock} value={confirm} onChange={(e) => setConfirm(e.target.value)} error={errors.confirm} />
-      <button className="btn-profile-primary" onClick={submit}>Update Password</button>
+      <button className="btn-profile-primary" onClick={submit} disabled={busy}>{busy ? "Saving…" : "Update Password"}</button>
     </div>
   );
 };
@@ -107,20 +116,24 @@ const AddressEditorModal = ({ initial, onClose, onSave }) => {
 
 /* ═══ Delete Account Tab ═══ */
 const DeleteAccountTab = ({ role, onDelete }) => {
+  const { logout } = useAuth();
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const CORRECT_PASSWORD = role === "driver" ? "driver123" : "user123";
-
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!password) { setError("Please enter your password to confirm."); return; }
-    if (password !== CORRECT_PASSWORD) { setError("Incorrect password. Please try again."); return; }
     setError("");
     setSubmitting(true);
-    setTimeout(() => onDelete(), 600);
+    try {
+      // Keep historical deliveries intact: the backend DISABLES the account.
+      await extraService.deactivateAccount(password);
+      await logout();
+      window.location.href = "/login";
+    } catch (problem) { setError(problem.message); }
+    finally { setSubmitting(false); }
   };
 
   return (
@@ -128,10 +141,10 @@ const DeleteAccountTab = ({ role, onDelete }) => {
       <div className="delete-warning">
         <span className="delete-warning__icon"><TriangleAlert size={20} /></span>
         <div>
-          <p className="delete-warning__title">Delete your {role === "driver" ? "driver " : ""}account</p>
+          <p className="delete-warning__title">Deactivate your {role === "driver" ? "driver " : ""}account</p>
           <p className="delete-warning__desc">
-            This will permanently erase your profile, booking history, saved addresses, wallet balance,
-            and reviews. This action <strong>cannot be undone</strong>.
+            Your account will be disabled. Booking history and money records are preserved for audit.
+            Contact an administrator if you need to reactivate it.
           </p>
         </div>
       </div>
@@ -179,7 +192,7 @@ const DeleteAccountTab = ({ role, onDelete }) => {
         disabled={!password || submitting}
         onClick={handleDelete}
       >
-        <FiTrash2 size={14} /> {submitting ? "Deleting account…" : "Delete My Account"}
+        <FiTrash2 size={14} /> {submitting ? "Deactivating…" : "Deactivate My Account"}
       </button>
     </div>
   );

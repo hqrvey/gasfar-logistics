@@ -47,6 +47,11 @@ export const authService = {
     });
   },
 
+  // Admin approves or rejects real DriverProfile verification records.
+  updateDriverApproval(id, status) {
+    return apiRequest(`/auth/drivers/${id}/approval`, { method: "PATCH", body: JSON.stringify({ status }) });
+  },
+
   // Check a previously saved cookie when React is refreshed.
   me() {
     return apiRequest("/auth/me");

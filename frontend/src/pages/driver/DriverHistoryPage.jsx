@@ -1,3 +1,4 @@
+import useDriverWallet from "../../hooks/useDriverWallet.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import React from "react";
 import AppHeader from "../../components/common/AppHeader.jsx";
@@ -5,6 +6,7 @@ import OrderHistory from "../../components/common/OrderHistory.jsx";
 import { MOCK_DRIVER, MOCK_NOTIFICATIONS_DRIVER } from "../../data/demo/clientMockData.js";
 
 const DriverHistoryPage = () => {
+  const walletBalance = useDriverWallet();
   const { user } = useAuth();
   return (
   <div className="driver-shell">
@@ -14,8 +16,8 @@ const DriverHistoryPage = () => {
       notifications={MOCK_NOTIFICATIONS_DRIVER}
       online={MOCK_DRIVER.online}
       onToggleOnline={() => {}}
-      walletBalance={MOCK_DRIVER.walletBalance}
-      minBalance={MOCK_DRIVER.minBalance}
+      walletBalance={walletBalance}
+      minBalance={25}
       profilePath="/driver/profile"
       showOnlineToggle={false}
     />

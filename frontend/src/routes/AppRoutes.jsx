@@ -22,10 +22,13 @@ import DriverNotificationsPage from "../pages/driver/NotificationsPage.jsx";
 
 // Admin pages
 import DashboardPage from "../pages/admin/DashboardPage.jsx";
+import RolesPage from "../pages/admin/RolesPage.jsx";
+import AdminNotificationsPage from "../pages/admin/NotificationsPage.jsx";
 import UsersPage from "../pages/admin/UsersPage.jsx";
 import DriversPage from "../pages/admin/DriversPage.jsx";
 import DeliveriesPage from "../pages/admin/DeliveriesPage.jsx";
 import ReportsPage from "../pages/admin/ReportsPage.jsx";
+import FeeReviewsPage from "../pages/admin/FeeReviewsPage.jsx";
 import AdminProfilePage from "../pages/admin/ProfilePage.jsx";
 import SettingsPage from "../pages/admin/SettingsPage.jsx";
 import NotFoundPage from "../pages/admin/NotFoundPage.jsx";
@@ -35,8 +38,31 @@ import { ROUTES } from "./paths.js";
 
 // The pages below this route are visible only to the chosen role.
 // IMPORTANT: Real security will also be checked by Express on every API request.
+// Maps which moderator can access which section. Express repeats these checks.
+export function canAdminOpen(adminRole, section) {
+  if (!adminRole || adminRole === "super_admin") return true;
+  if (adminRole === "user_moderator") return section === "users";
+  if (adminRole === "driver_moderator") return section === "drivers";
+  if (adminRole === "fee_moderator") return section === "fees";
+  return false;
+}
+
+function ModeratorPage({ section, children }) {
+  const { user } = useAuth();
+  if (!canAdminOpen(user?.adminRole, section)) {
+    return <Navigate to="/admin/notifications" replace />;
+  }
+  return children;
+}
+
+function AdminHome() {
+  const { user } = useAuth();
+  const pages = { fee_moderator: "/admin/fee-reviews", driver_moderator: "/admin/drivers", user_moderator: "/admin/users" };
+  return <Navigate to={pages[user?.adminRole] || ROUTES.dashboard} replace />;
+}
+
 function ProtectedRoute({ allowedRole }) {
-  const { loggedIn, role, loading } = useAuth();
+  const { loggedIn, role, loading, user } = useAuth();
   const location = useLocation();
 
   if (loading) return <div role="status" style={{ padding: 24 }}>Checking session…</div>;
@@ -45,6 +71,11 @@ function ProtectedRoute({ allowedRole }) {
     return <Navigate to={ROUTES.login} replace state={{ from: location }} />;
   }
 
+  // Pending/rejected drivers may sign in to see their application status,
+  // but cannot open delivery pages until the administrator approves them.
+  if (allowedRole === "driver" && user?.driverVerificationStatus !== "approved") {
+    return <Navigate to={ROUTES.applicationPending} replace />;
+  }
   return <Outlet />;
 }
 
@@ -83,14 +114,17 @@ export default function AppRoutes({
       {/* Administrator pages share one sidebar layout */}
       <Route element={<ProtectedRoute allowedRole="admin" />}>
         <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<Navigate to={ROUTES.dashboard} replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="users" element={<UsersPage />} />
-          <Route path="drivers" element={<DriversPage />} />
-          <Route path="deliveries" element={<DeliveriesPage />} />
-          <Route path="reports" element={<ReportsPage />} />
-          <Route path="settings" element={<SettingsPage />} />
+          <Route index element={<AdminHome />} />
+          <Route path="dashboard" element={<ModeratorPage section="reports"><DashboardPage /></ModeratorPage>} />
+          <Route path="users" element={<ModeratorPage section="users"><UsersPage /></ModeratorPage>} />
+          <Route path="drivers" element={<ModeratorPage section="drivers"><DriversPage /></ModeratorPage>} />
+          <Route path="deliveries" element={<ModeratorPage section="reports"><DeliveriesPage /></ModeratorPage>} />
+          <Route path="reports" element={<ModeratorPage section="reports"><ReportsPage /></ModeratorPage>} />
+          <Route path="fee-reviews" element={<ModeratorPage section="fees"><FeeReviewsPage /></ModeratorPage>} />
+          <Route path="settings" element={<ModeratorPage section="reports"><SettingsPage /></ModeratorPage>} />
           <Route path="profile" element={<AdminProfilePage />} />
+          <Route path="notifications" element={<AdminNotificationsPage />} />
+          <Route path="roles" element={<ModeratorPage section="reports"><RolesPage /></ModeratorPage>} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>

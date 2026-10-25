@@ -10,7 +10,7 @@ import logo from "../../assets/logos/gaspar-logo2.png";
 import logomark from "../../assets/logos/gaspar-logomark.png";
 
 /* ═══ Auth ═══ */
-const TABS = [{ id: "username", label: "Username", Icon: FiUser }, { id: "phone", label: "Phone Number", Icon: FiPhone }, { id: "email", label: "Email", Icon: FiMail }];
+const TABS = [{ id: "username", label: "Username", Icon: FiUser }, { id: "phone", label: "Phone Number", Icon: FiPhone }];
 const LoginTabs = ({ active, onChange }) => (
   <div className="login-tabs" role="tablist">
     {TABS.map(({ id, label, Icon }) => (<button key={id} role="tab" aria-selected={active === id} className={`tab-btn ${active === id ? "tab-btn--active" : ""}`} onClick={() => onChange(id)} type="button"><Icon size={18} /><span>{label}</span></button>))}
@@ -19,7 +19,6 @@ const LoginTabs = ({ active, onChange }) => (
 const TAB_CONFIG = {
   username: { id: "username", label: "Username", placeholder: "Enter your username", icon: FiUser, type: "text" },
   phone: { id: "phone", label: "Phone Number", placeholder: "Enter your phone number", icon: FiPhone, type: "tel" },
-  email: { id: "email", label: "Email", placeholder: "Enter your email", icon: FiMail, type: "email" },
 };
 
 const LoginForm = () => {
@@ -53,7 +52,17 @@ const LoginForm = () => {
         (account.role === "admin" && requestedPage?.startsWith("/admin")) ||
         (account.role === "driver" && requestedPage?.startsWith("/driver")) ||
         (account.role === "customer" && requestedPage && !requestedPage.startsWith("/admin") && !requestedPage.startsWith("/driver"));
-      navigate(belongsToRole ? requestedPage : HOME_BY_ROLE[account.role], { replace: true });
+      if (account.role === "driver" && account.driverVerificationStatus !== "approved") {
+        navigate("/application-pending", { replace: true });
+      } else {
+        const moderatorHomes = {
+          fee_moderator: "/admin/fee-reviews",
+          driver_moderator: "/admin/drivers",
+          user_moderator: "/admin/users",
+        };
+        const home = account.role === "admin" ? (moderatorHomes[account.adminRole] || HOME_BY_ROLE.admin) : HOME_BY_ROLE[account.role];
+        navigate(home, { replace: true });
+      }
     } catch (error) {
       if (error.code === "DRIVER_PENDING") {
         navigate("/application-pending");

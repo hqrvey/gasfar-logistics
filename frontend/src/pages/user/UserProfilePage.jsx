@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useAuth } from "../../context/AuthContext.jsx";
+import { extraService } from "../../services/extraService.js";
 import { FiBriefcase, FiEdit2, FiHome, FiLock, FiMail, FiMapPin as FiMapPinOutline, FiPlus, FiTrash2, FiUser } from "react-icons/fi";
 import { MOCK_NOTIFICATIONS_USER, MOCK_SAVED_ADDRESSES } from "../../data/demo/clientMockData.js";
 import UserLayout from "../../layouts/UserLayout.jsx";
@@ -13,8 +15,15 @@ import {
 } from "../../components/common/ProfileComponents.jsx";
 
 const UserProfilePage = ({ savedAddresses = [], onSaveAddress, onUpdateAddress, onDeleteAddress }) => {
+  const { user, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState("profile");
-  const [info, setInfo] = useState({ username: "juandc", firstName: "Juan", lastName: "Dela Cruz", email: "user@test.com", phone: "0917 123 4567", photo: null });
+  const [info, setInfo] = useState({ username: "", firstName: "", lastName: "", email: "", phone: "", photo: null });
+  useEffect(() => {
+    if (!user) return;
+    const next = { username: user.username || "", firstName: user.firstName || "", lastName: user.lastName || "", email: user.email || "", phone: user.phone || "", photo: user.hasProfilePhoto ?
+      (import.meta.env.VITE_API_URL || "http://localhost:5001/api") + "/extra/me/photo?changed=" + Date.now() : null };
+    setInfo(next); setDraft(next);
+  }, [user]);
   const [draft, setDraft] = useState(info);
   const [editing, setEditing] = useState(false);
   const addresses = savedAddresses;
@@ -23,8 +32,21 @@ const UserProfilePage = ({ savedAddresses = [], onSaveAddress, onUpdateAddress, 
   const [deleteAddrId, setDeleteAddrId] = useState(null);
   const startEdit = () => { setDraft(info); setEditing(true); };
   const cancelEdit = () => { setDraft(info); setEditing(false); };
-  const saveEdit = () => { setInfo(draft); setEditing(false); alert("Profile updated! (mock)"); };
-  const updatePhoto = (file) => setInfo((s) => ({ ...s, photo: file }));
+  const saveEdit = async () => {
+    try {
+      await extraService.saveProfile({ username: draft.username, firstName: draft.firstName, lastName: draft.lastName, email: draft.email });
+      await refreshUser();
+      setEditing(false);
+      alert("Profile saved in MongoDB.");
+    } catch (problem) { alert(problem.message); }
+  };
+  // Profile images remain a local preview; they are NOT automatically uploaded.
+  const updatePhoto = async (file) => {
+    try {
+      await extraService.updateProfilePhoto(file);
+      await refreshUser(); // The image is now stored on the server, not just React.
+    } catch (problem) { alert(problem.message); }
+  };
   const tabs = [
     { id: "profile", label: "Profile Info", Icon: FiUser },
     { id: "addresses", label: "Saved Addresses", Icon: FiMapPinOutline },
@@ -33,11 +55,11 @@ const UserProfilePage = ({ savedAddresses = [], onSaveAddress, onUpdateAddress, 
   ];
   const header = (
     <>
-      <div className="profile-avatar profile-avatar--user">{info.photo ? <img src={URL.createObjectURL(info.photo)} alt={info.firstName} /> : <span>{info.firstName.charAt(0)}{info.lastName.charAt(0)}</span>}</div>
+      <div className="profile-avatar profile-avatar--user">{info.photo ? <img src={(typeof info.photo === "string" ? info.photo : URL.createObjectURL(info.photo))} alt={info.firstName} /> : <span>{info.firstName.charAt(0)}{info.lastName.charAt(0)}</span>}</div>
       <div className="profile-header-info">
         <h2 className="profile-header-name">{info.firstName} {info.lastName}</h2>
         <p className="profile-header-meta">@{info.username} · {info.email} · +63 {info.phone}</p>
-        <p className="profile-header-sub">Member since Sept 2026</p>
+        <p className="profile-header-sub">Customer account</p>
       </div>
     </>
   );
@@ -55,7 +77,8 @@ const UserProfilePage = ({ savedAddresses = [], onSaveAddress, onUpdateAddress, 
                 <Field label="Last name"><input className="field__input" value={draft.lastName} disabled={!editing} onChange={(e) => setDraft({ ...draft, lastName: e.target.value })} /></Field>
               </div>
               <PhoneInput label="Mobile number" value={draft.phone} onChange={(v) => setDraft({ ...draft, phone: v })} disabled={!editing} />
-              <InputField id="email" label="Email" type="email" placeholder="your@email.com" icon={FiMail} value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} disabled={!editing} />
+              <p className="feature-mini">Linked email is optional contact information, not yet verified for account recovery.</p>
+              <InputField id="email" label="Linked email (unverified)" type="email" placeholder="your@email.com" icon={FiMail} value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} disabled={!editing} />
               {editing ? (<div className="profile-actions"><button className="btn-profile-ghost" onClick={cancelEdit}>Cancel</button><button className="btn-profile-primary" onClick={saveEdit}>Save Changes</button></div>) : (<button className="btn-profile-primary" onClick={startEdit}><FiEdit2 size={14} /> Edit Profile</button>)}
             </div>
           )}

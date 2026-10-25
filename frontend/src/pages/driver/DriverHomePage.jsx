@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { FiX } from "react-icons/fi";
 import { ArrowLeft, Check, Navigation, Package, ShieldCheck, TriangleAlert, Truck, Zap, ZapOff } from "lucide-react";
 import { useBookings } from "../../hooks/useBookings.js";
+import useDriverWallet from "../../hooks/useDriverWallet.js";
 import { bookingService } from "../../services/bookingService.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { ACTIVE_DELIVERY_STATUSES, DRIVER_ACTION, DRIVER_FLOW, peso } from "../../utils/helpers.js";
@@ -74,7 +75,7 @@ const CancelDeliveryModal = ({ booking, onConfirm, onClose }) => {
         <div className="modal-head"><h3>Cancel Delivery</h3><button className="modal-close" onClick={onClose} aria-label="Close"><FiX size={18} /></button></div>
         <div className="modal-body">
           <div className="modal-form">
-            <div className="modal-notice"><TriangleAlert size={14} /><span>Cancelling before package pickup ends this booking. For cancellations after pickup, contact support. No automatic wallet deduction is implemented yet.</span></div>
+            <div className="modal-notice"><TriangleAlert size={14} /><span>Cancelling before package pickup ends this booking. For cancellations after pickup, contact support. Cancellation may create a ₱10 journey fee or ₱20 arrival-at-pickup fee. You can request an admin review afterward.</span></div>
             <div className="input-group"><label className="input-label">Reason <span className="required">*</span></label><select className="field__input select-field" value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Select a reason…</option>{CANCEL_REASONS.map((r) => (<option key={r.id} value={r.id}>{r.label}</option>))}</select></div>
             <Field label="Additional notes (optional)"><textarea className="field__textarea" placeholder="Anything the customer or support should know…" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
           </div>
@@ -102,6 +103,10 @@ const BookingExpand = ({ booking, onClose, onStatusChange, onResendPin, busy }) 
   const currentIdx = DRIVER_FLOW.indexOf(booking.status === "pending" ? null : booking.status);
   const canAdvance = booking.status === "pending" || currentIdx < DRIVER_FLOW.length - 1;
   const canCancelActive = ["accepted", "at_pickup"].includes(booking.status);
+  const cashReady = booking.paymentMethod === "Cash" && !booking.cashCollectedAt && (
+    (booking.paymentSide === "sender" && ["picked_up", "arrived"].includes(booking.status)) ||
+    (booking.paymentSide === "recipient" && booking.status === "arrived")
+  );
   const handleAction = () => {
     if (booking.status === "pending") {
       onStatusChange("accepted");
@@ -116,6 +121,23 @@ const BookingExpand = ({ booking, onClose, onStatusChange, onResendPin, busy }) 
     const next = DRIVER_FLOW[currentIdx + 1];
     onStatusChange(next);
 
+  };
+  const handleJourney = async () => {
+    try { await bookingService.startPickup(booking.id); alert("Journey to pickup started. A cancellation now has a ₱10 fee."); onClose(); }
+    catch (error) { alert(error.message); }
+  };
+  const handleCash = async () => {
+    if (!window.confirm("Confirm cash was physically collected from the correct payer?")) return;
+    try { await bookingService.collectCash(booking.id); alert("Cash collection recorded."); onClose(); }
+    catch (error) { alert(error.message); }
+  };
+  const reportIssue = async () => {
+    const reason = window.prompt("Explain what happened to the parcel. Contact admin for help (minimum 5 characters):");
+    if (!reason) return;
+    try {
+      await bookingService.reportIssue(booking.id, reason);
+      alert("Issue reported to admin. Keep the parcel safe; the booking stays active.");
+    } catch (problem) { alert(problem.message); }
   };
   const handleDecline = () => { if (confirm(`Decline booking ${booking.id}?`)) { onStatusChange("declined"); onClose(); } };
   const handleCancelActive = (reason) => onStatusChange("cancelled", reason);
@@ -136,15 +158,23 @@ const BookingExpand = ({ booking, onClose, onStatusChange, onResendPin, busy }) 
           <div className="detail-row"><span className="detail-label">Items</span><span className="detail-value">{booking.itemDetails}</span></div>
           <div className="detail-row"><span className="detail-label">Contact</span><span className="detail-value">{booking.contactNumber || "Available after acceptance"}</span></div>
           <div className="detail-row"><span className="detail-label">Price</span><span className="detail-value detail-value--price">{booking.price}</span></div>
-          <div className="detail-row"><span className="detail-label">Commission</span><span className="detail-value">−{peso(Math.round((booking.feeCentavos / 100) * 0.1))}</span></div>
+          <div className="detail-row"><span className="detail-label">Payment</span><span className="detail-value">{booking.paymentMethod} / {booking.paymentSide} {booking.cashCollectedAt ? "(collected)" : ""}</span></div>
+          {booking.itemPhotoUrl && <div className="detail-row"><span className="detail-label">Parcel photo</span><span className="detail-value"><a href={(import.meta.env.VITE_API_URL || "http://localhost:5001/api") + booking.itemPhotoUrl} target="_blank" rel="noreferrer">View uploaded parcel photo</a></span></div>}
+          <div className="detail-row"><span className="detail-label">Commission</span><span className="detail-value">−{peso(Math.round((booking.feeCentavos / 100) * 0.15))}</span></div>
         </div>
         {booking.status === "pending" && (<div className="driver-action-row"><button className="btn-driver-decline" onClick={handleDecline}>Decline</button><button className="btn-driver-accept" onClick={handleAction} disabled={busy}>{busy ? "Saving…" : "Accept Booking"}</button></div>)}
+        {booking.status === "accepted" && !booking.journeyStartedAt && <button className="feature-primary" onClick={handleJourney}>Start Journey to Pickup</button>}
+        {cashReady && <button className="feature-primary" onClick={handleCash}>Confirm {booking.paymentSide} cash payment</button>}
         {booking.status !== "pending" && canAdvance && (
           <div className="driver-expand__actions">
             {canCancelActive && (<button className="btn-decline-booking" onClick={() => setShowCancelModal(true)}>Cancel</button>)}
             <button className="btn-driver-action" onClick={handleAction} disabled={busy}>{busy ? "Saving…" : DRIVER_ACTION[booking.status]}</button>
           </div>
         )}
+        {["picked_up", "arrived"].includes(booking.status) && <div className="feature-notice">
+          Unable to continue with the parcel? You cannot cancel after pickup.
+          <button type="button" onClick={reportIssue}>Report a delivery issue</button>
+        </div>}
         {booking.status === "delivered" && (<div className="driver-completed-msg">✅ Delivery completed!</div>)}
       </div>
       {showPinModal && (<DeliveryPinModal booking={booking} onClose={() => setShowPinModal(false)} onResend={onResendPin} onConfirm={(pin) => onStatusChange("delivered", null, pin)} />)}
@@ -181,6 +211,7 @@ const DriverHomePage = () => {
   // The backend shows eligible pending jobs and this driver's assigned jobs.
   const { bookings, loading, error: loadError, refresh } = useBookings();
   const { user } = useAuth();
+  const walletBalance = useDriverWallet();
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState(false);
   const locationSent = useRef({});
@@ -188,6 +219,13 @@ const DriverHomePage = () => {
   const [online, setOnline] = useState(true);
   const [activeTab, setActiveTab] = useState("available");
   const [myLocation, setMyLocation] = useState(null);
+  const lastGpsRef = useRef(null);
+  function metersBetween(a, b) {
+    const lat = (b.lat - a.lat) * Math.PI / 180;
+    const lng = (b.lng - a.lng) * Math.PI / 180;
+    const x = Math.sin(lat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(lng / 2) ** 2;
+    return 6371000 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  }
   const [gpsMessage, setGpsMessage] = useState("Waiting for GPS location…");
 
   // The browser watches real GPS updates (also works with our GPS simulator).
@@ -199,7 +237,13 @@ const DriverHomePage = () => {
     }
     const id = navigator.geolocation.watchPosition(
       (pos) => {
-        setMyLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        // Ignore tiny GPS jitter unless driver moves at least 25 metres.
+        // The first fix is always accepted; never substitute a fake location.
+        if (!lastGpsRef.current || metersBetween(lastGpsRef.current, next) >= 25) {
+          lastGpsRef.current = next;
+          setMyLocation(next);
+        }
         setGpsMessage("");
       },
       (err) => setGpsMessage(`GPS unavailable: ${err.message}`),
@@ -270,6 +314,21 @@ const DriverHomePage = () => {
   const availableBookings = bookings.filter(
     (b) => b.status === "pending"
   );
+  // Calculate straight-line distance for the driver's LOCAL nearby-pickup map.
+  // This is a display filter; backend vehicle matching and booking acceptance
+  // remain authoritative. Distant jobs can still appear in the full list.
+  function gpsDistanceMeters(a, b) {
+    const rad = number => number * Math.PI / 180;
+    const dLat = rad(b.lat - a.lat);
+    const dLng = rad(b.lng - a.lng);
+    const distance = Math.sin(dLat/2)**2 + Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLng/2)**2;
+    return 6371000 * 2 * Math.atan2(Math.sqrt(distance), Math.sqrt(1-distance));
+  }
+  const nearbyBookings = !myLocation ? [] : availableBookings.filter(b =>
+    b.pickup && Number.isFinite(b.pickup.lat) && Number.isFinite(b.pickup.lng)
+    && gpsDistanceMeters(myLocation, b.pickup) <= 1000
+  );
+
   const activeDeliveries = bookings.filter(
     (b) => ACTIVE_DELIVERY_STATUSES.includes(b.status) && b.driverId === user?.id
   );
@@ -279,7 +338,7 @@ const DriverHomePage = () => {
     const isPending = expanded.status === "pending";
     return (
       <div className="driver-shell">
-        <AppHeader role="driver" user={{ name: `${user?.firstName || ""} ${user?.lastName || ""}`.trim() }} notifications={MOCK_NOTIFICATIONS_DRIVER} online={online} onToggleOnline={setOnline} walletBalance={MOCK_DRIVER.walletBalance} minBalance={MOCK_DRIVER.minBalance} profilePath="/driver/profile" showOnlineToggle={false} />
+        <AppHeader role="driver" user={{ name: `${user?.firstName || ""} ${user?.lastName || ""}`.trim() }} notifications={MOCK_NOTIFICATIONS_DRIVER} online={online} onToggleOnline={setOnline} walletBalance={walletBalance} minBalance={25} profilePath="/driver/profile" showOnlineToggle={false} />
         <div className="driver-body">
           <div className="bd-shell">
             <div className="bd-panel">
@@ -319,7 +378,7 @@ const DriverHomePage = () => {
   /* ── List view (default) ── */
   return (
     <div className="driver-shell">
-      <AppHeader role="driver" user={{ name: `${user?.firstName || ""} ${user?.lastName || ""}`.trim() }} notifications={MOCK_NOTIFICATIONS_DRIVER} online={online} onToggleOnline={setOnline} walletBalance={MOCK_DRIVER.walletBalance} minBalance={MOCK_DRIVER.minBalance} profilePath="/driver/profile" showOnlineToggle={activeTab === "available"} />
+      <AppHeader role="driver" user={{ name: `${user?.firstName || ""} ${user?.lastName || ""}`.trim() }} notifications={MOCK_NOTIFICATIONS_DRIVER} online={online} onToggleOnline={setOnline} walletBalance={walletBalance} minBalance={25} profilePath="/driver/profile" showOnlineToggle={activeTab === "available"} />
       <div className="driver-body">
         <div className="driver-home__content">
           <div className="driver-home__panel">
@@ -371,7 +430,13 @@ const DriverHomePage = () => {
             </div>
           </div>
           <div className="driver-home__map">
-            <MapPicker viewOnly pickupCoords={null} dropoffCoords={null} driverCoords={myLocation} />
+            <MapPicker
+              viewOnly pickupCoords={null} dropoffCoords={null}
+              driverCoords={myLocation}
+              nearbyPickups={activeTab === "available" ? nearbyBookings : []}
+              onNearbyPickupClick={setExpandedId}
+            />
+            {activeTab === "available" && <p className="feature-mini">{myLocation ? nearbyBookings.length + " pickup pins within 1 km. Click a pin to open the booking." : "Enable device location to see pickup pins within 1 km."} All vehicle-eligible jobs remain in the list.</p>}
           </div>
         </div>
       </div>

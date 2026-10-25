@@ -75,6 +75,44 @@ export const bookingService = {
     });
   },
 
+  // Extra steps keep the existing delivery status names and maps working.
+  startPickup(id) {
+    // PATCH tells Express to change the booking's existing journey state.
+    return apiRequest(`${bookingUrl(id)}/start-pickup`, { method: "PATCH" });
+  },
+
+  collectCash(id) {
+    // The driver confirms that they collected money from the assigned payer.
+    return apiRequest(`${bookingUrl(id)}/collect-cash`, { method: "PATCH" });
+  },
+  requestFeeWaiver(id, reason, proof) {
+    // JSON for text-only requests; FormData when the driver attaches a photo.
+    if (proof) {
+      // When there is a file, send multipart FormData instead of JSON.
+      const form = new FormData();
+      form.append("reason", reason);
+      form.append("proof", proof);
+      return apiRequest(`${bookingUrl(id)}/fee-waiver`, { method: "POST", body: form });
+    }
+    // Without a proof image, a normal JSON request is enough.
+    return apiRequest(`${bookingUrl(id)}/fee-waiver`, {
+      method: "POST",
+      body: JSON.stringify({ reason: reason }),
+    });
+  },
+  reportIssue(id, reason) {
+    // An emergency/incident report does not automatically cancel a collected parcel.
+    return apiRequest(`${bookingUrl(id)}/issue`, {
+      method: "POST",
+      body: JSON.stringify({ reason: reason }),
+    });
+  },
+  attachPhoto(id, file) {
+    const form = new FormData();
+    form.append("photo", file);
+    return apiRequest(`${bookingUrl(id)}/item-photo`, { method: "POST", body: form });
+  },
+
   // Driver GPS -> Express -> MongoDB. Customer retrieves it with list().
   updateLocation(id, coords) {
     return apiRequest(`${bookingUrl(id)}/location`, {

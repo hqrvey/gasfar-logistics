@@ -1,114 +1,42 @@
-import { useState } from "react";
+import Pagination, { usePagination } from "../../components/admin/Pagination.jsx";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CalendarDays, Save } from "lucide-react";
-import { DetailModal, Modal, PageHeader, DeliveryTable } from "../../components/admin/AdminUI.jsx";
-import usePersistedState from "../../hooks/usePersistedState.js";
-import { INITIAL_DELIVERIES } from "../../data/demo/adminMockData.js";
-import { bookingDetailRows } from "../../utils/helpers.js";
-import { STORAGE_KEYS } from "../../utils/storage.js";
+import { PageHeader } from "../../components/admin/AdminUI.jsx";
+import { extraService } from "../../services/extraService.js";
 
-const FILTERS = ["All", "Ongoing", "In Transit", "Completed", "Cancelled"];
-const STATUS_OPTIONS = ["Pending", "Ongoing", "In Transit", "Completed", "Cancelled"];
-
+// Each row is one REAL MongoDB booking. Admin may confirm external online payment,
+// but may NOT arbitrarily mark a parcel delivered and bypass the recipient's PIN.
+const FILTERS = ["All", "pending", "accepted", "at_pickup", "picked_up", "arrived", "delivered", "cancelled"];
 export default function DeliveriesPage() {
-  const [rows, setRows] = usePersistedState(STORAGE_KEYS.deliveries, INITIAL_DELIVERIES);
-  const [selected, setSelected] = useState(null);
-  const [editing, setEditing] = useState(null);
-  const [pendingStatus, setPendingStatus] = useState("Pending");
-
-  // The status filter lives in the URL: /deliveries?status=Completed
-  const [searchParams, setSearchParams] = useSearchParams();
-  const requested = searchParams.get("status");
-  const filter = FILTERS.includes(requested) ? requested : "All";
-
-  const changeFilter = (status) => setSearchParams(status === "All" ? {} : { status });
-
-  const visibleRows = rows.filter((row) => filter === "All" || row[4] === filter);
-
-  const openEdit = (row) => {
-    setEditing(row);
-    setPendingStatus(row[4]);
-  };
-
-  const saveEdit = () => {
-    setRows((current) =>
-      current.map((row) =>
-        row[0] === editing[0] ? [...row.slice(0, 4), pendingStatus, row[5]] : row
-      )
-    );
-    setEditing(null);
-  };
-
-  return (
-    <section className="content">
-      <PageHeader
-        title="Delivery Management"
-        desc="Monitor and manage all delivery requests and transactions."
-      >
-        <button className="secondary">
-          <CalendarDays size={15} />
-          Date Range
-        </button>
-      </PageHeader>
-
-      <div className="card tableCard">
-        <div className="cardHead">
-          <div>
-            <h2>All Delivery Requests</h2>
-            <p>Click Edit beside the status to change a delivery status.</p>
-          </div>
-
-          <div className="filterPills">
-            {FILTERS.map((status) => (
-              <button
-                key={status}
-                className={filter === status ? "selectedPill" : ""}
-                onClick={() => changeFilter(status)}
-              >
-                {status}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <DeliveryTable rows={visibleRows} onView={setSelected} onEdit={openEdit} />
-      </div>
-
-      {selected && (
-        <DetailModal
-          title={`Delivery ${selected[0]}`}
-          rows={bookingDetailRows(selected)}
-          onClose={() => setSelected(null)}
-        />
-      )}
-
-      {editing && (
-        <Modal title={`Edit ${editing[0]}`} onClose={() => setEditing(null)}>
-          <label className="modalLabel">
-            Delivery Status
-            <select
-              className="fullSelect"
-              value={pendingStatus}
-              onChange={(event) => setPendingStatus(event.target.value)}
-            >
-              {STATUS_OPTIONS.map((status) => (
-                <option key={status}>{status}</option>
-              ))}
-            </select>
-          </label>
-
-          <div className="modalActions">
-            <button className="secondary" onClick={() => setEditing(null)}>
-              Cancel
-            </button>
-
-            <button className="primary" onClick={saveEdit}>
-              <Save size={14} />
-              Save
-            </button>
-          </div>
-        </Modal>
-      )}
-    </section>
-  );
+  const [rows, setRows] = useState([]);
+  const [error, setError] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [params, setParams] = useSearchParams();
+  const filter = FILTERS.includes(params.get("status")) ? params.get("status") : "All";
+  async function reload() { try { setRows((await extraService.deliveries()).bookings); setError(""); } catch (e) { setError(e.message); } }
+  useEffect(() => { reload(); }, []);
+  const visible = rows.filter(row => (filter === "All" || row.status === filter) && (!from || row.createdAt.slice(0,10) >= from) && (!to || row.createdAt.slice(0,10) <= to));
+  const list = usePagination(visible);
+  function exportCsv() {
+    const columns = ["Order", "Customer", "Driver", "Status", "Vehicle", "Fee", "Method", "Payment", "Created"];
+    const lines = [columns, ...visible.map(b => [b.id,b.customer,b.driver || "",b.status,b.vehicle,b.price,b.paymentMethod,b.paymentStatus,b.createdAt])];
+    const text = lines.map(line => line.map(value => '"' + String(value ?? "").replaceAll('"', '""') + '"').join(",")).join("\n");
+    const href = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+    const link = document.createElement("a"); link.href = href; link.download = "gasfar-deliveries.csv"; link.click(); URL.revokeObjectURL(href);
+  }
+  async function confirmPayment(id) {
+    if (!window.confirm("Have you independently verified this GCash/Maya payment? This action does not collect money.")) return;
+    try { await extraService.confirmPayment(id); await reload(); } catch (e) { setError(e.message); }
+  }
+  return <section className="content">
+    <PageHeader title="Delivery Management" desc="Live MongoDB deliveries and payment records. Delivery completion requires recipient PIN." />
+    {error && <p role="alert" className="feature-error">{error}</p>}
+    <div className="card tableCard"><div className="cardHead"><h2>All Delivery Requests</h2><button className="secondary" onClick={exportCsv}>Export CSV</button></div>
+      <div className="feature-filters"><select value={filter} onChange={e => setParams(e.target.value === "All" ? {} : { status: e.target.value })}>{FILTERS.map(f => <option key={f}>{f}</option>)}</select><label>From <input type="date" value={from} onChange={e => setFrom(e.target.value)}/></label><label>To <input type="date" value={to} onChange={e => setTo(e.target.value)}/></label></div>
+      <div className="tableScroll"><table><thead><tr><th>Order</th><th>Customer</th><th>Driver</th><th>Status</th><th>Amount</th><th>Payment</th><th>Date</th><th>Action</th></tr></thead>
+      <tbody>{list.pageRows.map(b => <tr key={b.id}><td className="id">{b.id}</td><td>{b.customer}</td><td>{b.driver || "Unassigned"}</td><td>{b.status}</td><td>₱{b.price.toFixed(2)}</td><td>{b.paymentMethod} / {b.paymentStatus}</td><td>{new Date(b.createdAt).toLocaleDateString()}</td><td>{b.status === "delivered" && b.paymentMethod !== "cash" && b.paymentStatus !== "paid" ? <button className="actionBtn" onClick={() => confirmPayment(b.id)}>Confirm external payment</button> : "—"}</td></tr>)}</tbody>
+      </table></div><Pagination page={list.page} setPage={list.setPage} totalPages={list.totalPages} />
+    </div>
+  </section>;
 }

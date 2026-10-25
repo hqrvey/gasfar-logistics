@@ -80,6 +80,10 @@ const MapPicker = React.forwardRef(function MapPicker({
   pickupCoords = null,
   dropoffCoords = null,
   driverCoords = null,
+  // Used only by the driver's available-bookings map.
+  // Each item: { id, pickup: { lat, lng, address } }.
+  nearbyPickups = [],
+  onNearbyPickupClick = null,
   showDriverToPickup = false,
   mapMode = null,
   singlePoint = false,
@@ -102,6 +106,9 @@ const MapPicker = React.forwardRef(function MapPicker({
   const pickupMarkerRef = useRef(null);
   const dropoffMarkerRef = useRef(null);
   const driverMarkerRef = useRef(null);
+  const nearbyMarkerRefs = useRef([]);
+  const nearbyRadiusRef = useRef(null);
+  const hasCenteredDriverRef = useRef(false);
   const deliveryLineRef = useRef(null);
   const pickupLineRef = useRef(null);
   const driverRouteRequest = useRef({ time: 0, pickup: "", driver: null, id: 0 });
@@ -225,6 +232,53 @@ const MapPicker = React.forwardRef(function MapPicker({
       driverIcon, "pickup", "DRIVER LOCATION");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driverCoords?.lat, driverCoords?.lng, mapReady]);
+
+  // List-view map: draw a 1 km circle around the REAL GPS fix and clickable
+  // pickup markers for available deliveries within that circle.
+  // No browser store or fake GPS location is used.
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    // Remove old markers first so previous jobs do not remain on the map.
+    for (const marker of nearbyMarkerRefs.current) marker.setMap(null);
+    nearbyMarkerRefs.current = [];
+    if (nearbyRadiusRef.current) nearbyRadiusRef.current.setMap(null);
+    if (!validPoint(driverCoords) || !Array.isArray(nearbyPickups)) return;
+
+    nearbyRadiusRef.current = new google.maps.Circle({
+      map: mapRef.current,
+      center: { lat: driverCoords.lat, lng: driverCoords.lng },
+      radius: 1000,
+      strokeColor: "#16A34A", strokeWeight: 2, strokeOpacity: 0.65,
+      fillColor: "#16A34A", fillOpacity: 0.08,
+      clickable: false,
+    });
+    for (const booking of nearbyPickups) {
+      const point = booking.pickup;
+      if (!validPoint(point)) continue;
+      const marker = new google.maps.Marker({
+        map: mapRef.current,
+        position: { lat: point.lat, lng: point.lng },
+        title: "Booking " + booking.id + ": " + (point.address || "pickup"),
+        icon: { url: PICKUP_ICON_URL, scaledSize: new google.maps.Size(22, 36) },
+      });
+      marker.addListener("click", () => onNearbyPickupClick?.(booking.id));
+      nearbyMarkerRefs.current.push(marker);
+    }
+    return () => {
+      for (const marker of nearbyMarkerRefs.current) marker.setMap(null);
+      nearbyMarkerRefs.current = [];
+      nearbyRadiusRef.current?.setMap(null);
+    };
+  }, [mapReady, nearbyPickups, driverCoords?.lat, driverCoords?.lng, onNearbyPickupClick]);
+
+  // On the driver list map there is no pickup/drop-off route to fit.
+  // Centre it on the first real GPS fix, without re-centering on every update.
+  useEffect(() => {
+    if (!mapReady || !validPoint(driverCoords) || validPoint(pickup) || hasCenteredDriverRef.current) return;
+    mapRef.current.setCenter({ lat: driverCoords.lat, lng: driverCoords.lng });
+    mapRef.current.setZoom(14);
+    hasCenteredDriverRef.current = true;
+  }, [mapReady, driverCoords?.lat, driverCoords?.lng, pickup?.lat, pickup?.lng]);
 
   // Fit the map to pickup, drop-off, and (when available) the driver's position.
   // Do not repeatedly zoom out every time the driver's GPS changes.
