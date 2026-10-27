@@ -6,7 +6,7 @@ import { BadgeCheck, Bike, Car, CarFront, ShieldCheck, Star, TrendingUp, Truck, 
 import { InputField, PhoneInput, FileUpload, VehicleSelect } from "../../components/common/FormComponents.jsx";
 import { ProfileLayout, PhotoUploader, ChangePasswordTab, DeleteAccountTab } from "../../components/common/ProfileComponents.jsx";
 import AppHeader from "../../components/common/AppHeader.jsx";
-import { useBookings } from "../../hooks/useBookings.js";
+import { useDriverTracking } from "../../context/DriverTrackingContext.jsx";
 import { MOCK_DRIVER, MOCK_NOTIFICATIONS_DRIVER } from "../../data/demo/clientMockData.js";
 import { SqCard, Field } from "../../components/common/BookingUI.jsx";
 import { peso } from "../../utils/helpers.js";
@@ -215,7 +215,7 @@ const DriverProfilePage = () => {
   const [vehicle, setVehicle] = useState(MOCK_DRIVER.vehicle);
   const [showVehicleChange, setShowVehicleChange] = useState(false);
 
-  const { bookings } = useBookings();
+  const { bookings } = useDriverTracking();
   const { user, refreshUser } = useAuth();
   useEffect(() => {
     if (!user) return;

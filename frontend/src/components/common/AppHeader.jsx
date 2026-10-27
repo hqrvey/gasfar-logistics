@@ -1,3 +1,4 @@
+import { useBookingNotifications } from "../../context/BookingNotificationsContext.jsx";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FiBell, FiChevronDown, FiLogOut, FiSettings, FiUser } from "react-icons/fi";
@@ -31,6 +32,8 @@ export default function AppHeader({
   profilePath,
   showOnlineToggle = false,
 }) {
+  const bookingNotices = useBookingNotifications();
+  notifications = bookingNotices?.items ?? notifications;
   const navigate = useNavigate();
   const location = useLocation();
   const { logout, user: authenticatedUser } = useAuth();

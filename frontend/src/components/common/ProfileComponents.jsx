@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import { extraService } from "../../services/extraService.js";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { FiArrowRight, FiBriefcase, FiCamera, FiChevronDown, FiEye, FiEyeOff, FiHome, FiLock, FiMail, FiMapPin as FiMapPinOutline, FiPhone, FiTrash2, FiUpload, FiUser, FiX } from "react-icons/fi";
+import { FiArrowRight, FiBriefcase, FiCamera, FiChevronDown, FiEye, FiEyeOff, FiHome, FiLock, FiMail, FiMapPin as FiMapPinOutline, FiPhone, FiNavigation, FiTrash2, FiUpload, FiUser, FiX } from "react-icons/fi";
 import { Check, MapPin, ShieldCheck, TriangleAlert } from "lucide-react";
 import { InputField, FileUpload, PasswordStrength, PhoneInput } from "./FormComponents.jsx";
 import { MapPicker, MapSearchBar } from "./MapComponents.jsx";
@@ -67,11 +67,23 @@ const ChangePasswordTab = () => {
 };
 
 /* ═══ Saved addresses ═══ */
-const LocationChooserModal = ({ mode, addresses, onPickSaved, onPinOnMap, onClose }) => (
+const LocationChooserModal = ({ mode, addresses, onPickSaved, onPinOnMap, onClose, currentLocation = null }) => (
   <div className="modal-backdrop" onClick={onClose}>
     <div className="modal-card modal-card--narrow" onClick={(e) => e.stopPropagation()}>
       <div className="modal-head"><h3>Choose {mode === "pickup" ? "Pickup" : "Drop-off"} Location</h3><button className="modal-close" onClick={onClose} aria-label="Close"><FiX size={18} /></button></div>
       <div className="modal-body">
+        {/* The GPS choice only appears for pickup, never for drop-off. */}
+        {currentLocation && (
+          <button type="button" className="loc-pick-map" onClick={currentLocation.onUse} disabled={currentLocation.busy}>
+            <span className="loc-pick-map__icon loc-pick-map__icon--pickup"><FiNavigation size={18} /></span>
+            <div className="loc-pick-map__body">
+              <p className="loc-pick-map__title">{currentLocation.busy ? "Getting your address…" : "Use my current location"}</p>
+              <p className="loc-pick-map__sub">{currentLocation.busy ? "Finding your GPS position…" : "Set the pickup to where you are right now"}</p>
+            </div>
+            <FiArrowRight size={16} className="loc-pick-map__arrow" />
+          </button>
+        )}
+        {currentLocation?.error && <p className="feature-error" role="alert">{currentLocation.error}</p>}
         <button type="button" className="loc-pick-map" onClick={onPinOnMap}>
           <span className={`loc-pick-map__icon loc-pick-map__icon--${mode}`}><FiMapPinOutline size={18} /></span>
           <div className="loc-pick-map__body"><p className="loc-pick-map__title">Pin on map</p><p className="loc-pick-map__sub">Search an address or tap on the map</p></div>

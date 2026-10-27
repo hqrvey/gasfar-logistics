@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MOCK_NOTIFICATIONS_USER, MOCK_NOTIFICATIONS_DRIVER } from "../../data/demo/clientMockData.js";
+import { useBookingNotifications } from "../../context/BookingNotificationsContext.jsx";
 
 const FILTERS = {
   customer: [
@@ -17,10 +17,10 @@ const FILTERS = {
   ],
 };
 
-// Shared notification interface. The role controls the demo data and filters.
+// Booking-state notifications come from authenticated polling and persisted local read state.
 export default function NotificationsView({ role }) {
-  const initialItems = role === "driver" ? MOCK_NOTIFICATIONS_DRIVER : MOCK_NOTIFICATIONS_USER;
-  const [items, setItems] = useState(initialItems);
+  const notifications = useBookingNotifications();
+  const { items = [], markRead = () => {}, markAllRead = () => {}, clearAll = () => {} } = notifications || {};
   const [filter, setFilter] = useState("all");
   const unreadCount = items.filter((item) => !item.read).length;
 
@@ -36,18 +36,8 @@ export default function NotificationsView({ role }) {
     return items.filter((item) => matchesFilter(item, selectedFilter)).length;
   }
 
-  function markRead(id) {
-    setItems((current) => current.map((item) => (
-      item.id === id ? { ...item, read: true } : item
-    )));
-  }
-
-  function markAllRead() {
-    setItems((current) => current.map((item) => ({ ...item, read: true })));
-  }
-
-  function clearAll() {
-    if (window.confirm("Clear all notifications?")) setItems([]);
+  function confirmClearAll() {
+    if (window.confirm("Clear all notifications?")) clearAll();
   }
 
   return (
@@ -65,7 +55,7 @@ export default function NotificationsView({ role }) {
               <button type="button" className="bd-mini-btn" onClick={markAllRead}>Mark all read</button>
             )}
             {items.length > 0 && (
-              <button type="button" className="bd-mini-btn bd-mini-btn--danger" onClick={clearAll}>Clear all</button>
+              <button type="button" className="bd-mini-btn bd-mini-btn--danger" onClick={confirmClearAll}>Clear all</button>
             )}
           </div>
         </div>

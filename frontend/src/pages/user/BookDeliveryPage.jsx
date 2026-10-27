@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { fareBreakdown } from "../../utils/pricing.js";
+import { fareBreakdown, FARE_RATES, VEHICLE_CAPACITY_KG } from "../../utils/pricing.js";
 import { extraService } from "../../services/extraService.js";
 import { FiArrowLeft, FiCheck, FiClock, FiMapPin, FiPlus, FiX, FiMaximize2, FiMinimize2, FiUpload } from "react-icons/fi";
 import { ArrowLeft, ArrowRight, Bike, Car, CarFront, CalendarDays, Check, CircleDollarSign, Clock, CreditCard, FileText, Hand, MapPin, Navigation, Package, Pill, Search, Shirt, Thermometer, TriangleAlert, Truck, Utensils, Van, Armchair, BookOpen, Cog, User, UserRound, ArrowUp, Droplets, Layers, Monitor, ShieldCheck, Zap } from "lucide-react";
@@ -8,7 +8,7 @@ import { peso } from "../../utils/helpers.js";
 import { bookingService } from "../../services/bookingService.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { MapPicker, MapModeSwitcher, MapSearchBar, MapZoomControls } from "../../components/common/MapComponents.jsx";
-import { SqCard, LocCard, Field, RR, EmptyState, ReviewGroup } from "../../components/common/BookingUI.jsx";
+import { SqCard, LocCard, Field, RR, EmptyState, ReviewGroup, FareBreakdown } from "../../components/common/BookingUI.jsx";
 import UserLayout from "../../layouts/UserLayout.jsx";
 import { LocationChooserModal } from "../../components/common/ProfileComponents.jsx";
 import { FileUpload, VehicleSelect } from "../../components/common/FormComponents.jsx";
@@ -86,7 +86,9 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
   const [submitting, setSubmitting] = useState(false);
   const [bookingError, setBookingError] = useState("");
   const [gpsLoading, setGpsLoading] = useState(false);
+  const [touched, setTouched] = useState({});
   const [gpsMessage, setGpsMessage] = useState("");
+  const [userPosition, setUserPosition] = useState(null); // A blue dot, shown only after actual customer GPS.
 
   // Same navigator.geolocation API used for real driver tracking, but here
   // we request ONE location to fill the customer's pickup pin.
@@ -115,7 +117,9 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
         // The GPS pin remains usable even if address lookup fails.
         console.warn("Reverse geocoding:", error.message);
       }
+      setUserPosition({ lat, lng });
       handlePickup({ lat, lng, address });
+      setShowSavedPicker(null); // Close the chooser only after GPS succeeds.
       setGpsLoading(false);
     }, function (error) {
       setGpsLoading(false);
@@ -136,25 +140,61 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
   const [credit, setCredit] = useState(0);
   useEffect(() => { extraService.myCredit().then(result => setCredit(result.creditCentavos / 100)).catch(() => {}); }, []);
 
-  // Google Maps is not Leaflet: do not call invalidateSize().
-  // Trigger a map resize when the map panel expands or collapses.
+  // MapLibre must resize after a panel expands or the wizard returns to the
+  // locations step. This uses the SAME map; it does not load a new map or tiles.
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
-      const map = mapRef.current?.getMap();
-      if (map) window.google?.maps?.event?.trigger?.(map, "resize");
+      mapRef.current?.getMap()?.resize();
     });
     return () => cancelAnimationFrame(frame);
-  }, [mapExpanded]);
+  }, [mapExpanded, step]);
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const toggle = (k, id) => setForm(f => ({ ...f, [k]: f[k].includes(id) ? f[k].filter(x => x !== id) : [...f[k], id] }));
+  // Show input errors only after interacting with that particular field.
+  function markTouched(field) {
+    setTouched(previous => ({ ...previous, [field]: true }));
+  }
+  const set = (k, v) => {
+    setForm(f => ({ ...f, [k]: v }));
+    markTouched(k);
+  };
+  const toggle = (k, id) => {
+    setForm(f => ({ ...f, [k]: f[k].includes(id) ? f[k].filter(x => x !== id) : [...f[k], id] }));
+    markTouched(k);
+  };
+  const today = new Date().toLocaleDateString("en-CA");
+  const nowTime = new Date().toTimeString().slice(0, 5);
+  const phoneDigits = form.recipientPhone.replace(/\D/g, "").replace(/^63/, "").replace(/^0/, "");
+  const formErrors = {
+    scheduleDate: form.scheduleType !== "later" ? "" : !form.scheduleDate ? "Choose a pickup date." : form.scheduleDate < today ? "Date must not be in the past." : "",
+    scheduleTime: form.scheduleType !== "later" ? "" : !form.scheduleTime ? "Choose a pickup time." : form.scheduleDate === today && form.scheduleTime <= nowTime ? "Choose a future time." : "",
+    recipientName: form.recipientName.trim().length < 2 ? "Enter the recipient's full name." : "",
+    recipientPhone: !/^9\d{9}$/.test(phoneDigits) ? "Enter a valid PH number, e.g. 0917 123 4567." : "",
+    itemWeight: !/^\d+(?:\.\d+)?\s*(?:kg|kgs|kilos?)?$/i.test(String(form.itemWeight).trim()) || !(parseFloat(form.itemWeight) > 0)
+      ? "Enter a weight greater than 0, e.g. 2 kg."
+      : form.vehicleType && parseFloat(form.itemWeight) > VEHICLE_CAPACITY_KG[form.vehicleType]
+        ? `Maximum weight for this vehicle is ${VEHICLE_CAPACITY_KG[form.vehicleType].toLocaleString()} kg.`
+        : "",
+    itemTypes: form.itemTypes.length === 0 ? "Select at least one item type." : "",
+  };
+  const errorFor = field => touched[field] ? formErrors[field] : "";
+  const fieldClass = field => "field__input" + (errorFor(field) ? " input-error" : "");
 
   const isLocStep = step === 1;
-  const estimate = routeInfo ? fareBreakdown(form.vehicleType, Number(routeInfo.distance), form.deliveryType) : null;
+  const estimate = routeInfo ? fareBreakdown(form.vehicleType, Number(routeInfo.distanceExact ?? routeInfo.distance), form.deliveryType) : null;
   const estimatedFee = estimate ? estimate.total : null;
+  // Present the exact same rate tiers as the frontend's fareBreakdown() helper.
+  // Express is still responsible for the final authoritative delivery price.
+  const rates = FARE_RATES[form.vehicleType];
+  const distanceKm = Number(routeInfo?.distanceExact ?? routeInfo?.distance ?? 0);
+  const firstDistance = rates ? Math.min(distanceKm, rates.split) : 0;
+  const extraDistance = rates ? Math.max(0, distanceKm - rates.split) : 0;
+  const displayedFare = estimate && rates ? {
+    ...estimate, distanceKm, firstDistance, extraDistance,
+    firstRate: rates.first, extraRate: rates.extra,
+  } : null;
 
-  const handlePickup = (pin) => { set("pickup", pin); setMapMode("dropoff"); };
-  const handleDropoff = (pin) => { set("dropoff", pin); setMapMode("pickup"); };
+  const handlePickup = (pin) => { set("pickup", pin); setRouteInfo(null); setMapMode("dropoff"); };
+  const handleDropoff = (pin) => { set("dropoff", pin); setRouteInfo(null); setMapMode("pickup"); };
   const handleClear = () => { setForm(f => ({ ...f, pickup: null, dropoff: null })); setRouteInfo(null); setMapMode("pickup"); };
 
   const selVehicle = VEHICLES.find(v => v.id === form.vehicleType);
@@ -167,6 +207,12 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
   // Express returns JSON { booking: {...} }; apiRequest() converts JSON to an object.
   async function handleConfirm() {
     if (submitting) return;
+    // Guard the POST as well as the Continue button: review data can be edited.
+    if (!form.pickup || !form.dropoff || locationsTooClose || !routeInfo ||
+        !form.vehicleType || !form.deliveryType || Object.values(formErrors).some(Boolean)) {
+      setBookingError("Review the required fields, package weight and vehicle capacity before booking.");
+      return;
+    }
     setSubmitting(true);
     setBookingError("");
     try {
@@ -241,15 +287,13 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
                 <div className="bd-sec">
                   <div className="bd-sec-label">Locations</div>
                   <LocCard type="pickup" pin={form.pickup} onEdit={() => setShowSavedPicker("pickup")} />
-                  <button type="button" className="feature-secondary" onClick={useMyLocation} disabled={gpsLoading}>
-                    <Navigation size={15} /> {gpsLoading ? "Getting your position…" : "Use my current location for pickup"}
-                  </button>
+
                   {gpsMessage && <p role="status" className="feature-mini">{gpsMessage}</p>}
                   {locationsTooClose && <p className="feature-error">Pickup and drop-off must be at least 100 metres apart.</p>}
                   <LocCard type="dropoff" pin={form.dropoff} onEdit={() => setShowSavedPicker("dropoff")} />
                   {routeInfo && (<div className="bd-route-info"><span><strong>{routeInfo.distance} km</strong> distance</span><span><strong>~{routeInfo.durationLabel}</strong> estimated</span></div>)}
                 </div>
-                <div className="bd-actions"><button className="btn-bd-next" onClick={() => setStep(2)} type="button" disabled={!form.pickup || !form.dropoff || locationsTooClose}>Continue <ArrowRight size={14} /></button></div>
+                <div className="bd-actions"><button className="btn-bd-next" onClick={() => setStep(2)} type="button" disabled={!form.pickup || !form.dropoff || locationsTooClose || !routeInfo}>Continue <ArrowRight size={14} /></button></div>
               </div>
             )}
 
@@ -263,14 +307,14 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
                   </div>
                   {form.scheduleType === "later" && (
                     <div className="bd-row2 bd-row2--spaced">
-                      <Field label="Date"><input type="date" className="field__input" value={form.scheduleDate} onChange={e => set("scheduleDate", e.target.value)} /></Field>
-                      <Field label="Time"><input type="time" className="field__input" value={form.scheduleTime} onChange={e => set("scheduleTime", e.target.value)} /></Field>
+                      <Field label="Date" required error={errorFor("scheduleDate")}><input type="date" className={fieldClass("scheduleDate")} min={today} value={form.scheduleDate} onChange={e => set("scheduleDate", e.target.value)} onBlur={() => markTouched("scheduleDate")} /></Field>
+                      <Field label="Time" required error={errorFor("scheduleTime")}><input type="time" className={fieldClass("scheduleTime")} value={form.scheduleTime} onChange={e => set("scheduleTime", e.target.value)} onBlur={() => markTouched("scheduleTime")} /></Field>
                     </div>
                   )}
                 </div>
                 <div className="bd-actions">
                   <button className="btn-bd-back" type="button" onClick={() => setStep(1)}><ArrowLeft size={14} /> Back</button>
-                  <button className="btn-bd-next" type="button" onClick={() => setStep(3)} disabled={form.scheduleType === "later" && (!form.scheduleDate || !form.scheduleTime)}>Continue <ArrowRight size={14} /></button>
+                  <button className="btn-bd-next" type="button" onClick={() => setStep(3)} disabled={Boolean(formErrors.scheduleDate || formErrors.scheduleTime)}>Continue <ArrowRight size={14} /></button>
                 </div>
               </div>
             )}
@@ -280,14 +324,14 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
                 <div className="bd-sec">
                   <div className="bd-sec-label">Recipient details</div>
                   <div className="bd-row2">
-                    <Field label="Full name"><input className="field__input" placeholder="e.g. Maria Santos" value={form.recipientName} onChange={e => set("recipientName", e.target.value)} /></Field>
-                    <Field label="Contact number"><input className="field__input" placeholder="09XX XXX XXXX" value={form.recipientPhone} onChange={e => set("recipientPhone", e.target.value)} /></Field>
+                    <Field label="Full name" required error={errorFor("recipientName")}><input className={fieldClass("recipientName")} placeholder="e.g. Maria Santos" value={form.recipientName} onChange={e => set("recipientName", e.target.value)} onBlur={() => markTouched("recipientName")} /></Field>
+                    <Field label="Contact number" required error={errorFor("recipientPhone")}><input type="tel" className={fieldClass("recipientPhone")} placeholder="09XX XXX XXXX" value={form.recipientPhone} onChange={e => set("recipientPhone", e.target.value.replace(/[^0-9+\s]/g, "").slice(0, 18))} onBlur={() => markTouched("recipientPhone")} /></Field>
                   </div>
                   <Field label="Unit / Floor (optional)"><input className="field__input" placeholder="e.g. Unit 3B, 2nd Floor" value={form.recipientUnit} onChange={e => set("recipientUnit", e.target.value)} /></Field>
                 </div>
                 <div className="bd-actions">
                   <button className="btn-bd-back" type="button" onClick={() => setStep(2)}><ArrowLeft size={14} /> Back</button>
-                  <button className="btn-bd-next" type="button" onClick={() => setStep(4)} disabled={!form.recipientName.trim() || !/^\+?\d[\d\s-]{8,14}$/.test(form.recipientPhone)}>Continue <ArrowRight size={14} /></button>
+                  <button className="btn-bd-next" type="button" onClick={() => setStep(4)} disabled={Boolean(formErrors.recipientName || formErrors.recipientPhone)}>Continue <ArrowRight size={14} /></button>
                 </div>
               </div>
             )}
@@ -317,14 +361,14 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
                     ]}
                   />
                 </div>
-                <div className="bd-sec"><div className="bd-sec-label">Item type <span className="bd-sec-label-note">(select all that apply)</span></div><div className="bd-grid-5">{ITEM_TYPES.map(i => (<SqCard key={i.id} size="sm" selected={form.itemTypes.includes(i.id)} onClick={() => toggle("itemTypes", i.id)} Icon={i.Icon} label={i.label} />))}</div></div>
+                <div className="bd-sec"><div className="bd-sec-label">Item type <span className="required">*</span> <span className="bd-sec-label-note">(select all that apply)</span></div><div className="bd-grid-5">{ITEM_TYPES.map(i => (<SqCard key={i.id} size="sm" selected={form.itemTypes.includes(i.id)} onClick={() => toggle("itemTypes", i.id)} Icon={i.Icon} label={i.label} />))}</div>{errorFor("itemTypes") && <p className="field-error" role="alert">{errorFor("itemTypes")}</p>}</div>
                 <div className="bd-sec">
                   <div className="bd-sec-label">Quantity &amp; Weight</div>
                   <div className="bd-row2">
-                    <Field label="Quantity">
+                    <Field label="Quantity" required>
                       <div className="bd-qty"><button type="button" onClick={() => set("quantity", Math.max(1, form.quantity - 1))}>−</button><span>{form.quantity}</span><button type="button" onClick={() => set("quantity", form.quantity + 1)}>+</button></div>
                     </Field>
-                    <Field label="Approx. weight"><input className="field__input" placeholder="e.g. 2 kg" value={form.itemWeight} onChange={e => set("itemWeight", e.target.value)} /></Field>
+                    <Field label="Approx. weight" required error={errorFor("itemWeight")}><input className={fieldClass("itemWeight")} placeholder="e.g. 2 kg" value={form.itemWeight} onChange={e => set("itemWeight", e.target.value)} onBlur={() => markTouched("itemWeight")} /></Field>
                   </div>
                 </div>
                 <div className="bd-sec"><div className="bd-sec-label">Item photo <span className="bd-sec-label-note">(optional)</span></div><FileUpload label="Attach photo" imageOnly value={form.itemPhoto} onChange={(f) => set("itemPhoto", f)} /></div>
@@ -332,21 +376,21 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
                 <div className="bd-sec"><div className="bd-sec-label">Notes to driver <span className="bd-sec-label-note">(optional)</span></div><textarea className="field__textarea" placeholder="Special instructions, landmarks, gate codes…" value={form.notesToDriver} onChange={e => set("notesToDriver", e.target.value)} /></div>
                 <div className="bd-actions">
                   <button className="btn-bd-back" type="button" onClick={() => setStep(3)}><ArrowLeft size={14} /> Back</button>
-                  <button className="btn-bd-next" type="button" onClick={() => setStep(5)} disabled={!form.vehicleType || !form.deliveryType || form.itemTypes.length === 0}>Continue <ArrowRight size={14} /></button>
+                  <button className="btn-bd-next" type="button" onClick={() => setStep(5)} disabled={!form.vehicleType || !form.deliveryType || Boolean(formErrors.itemTypes || formErrors.itemWeight)}>Continue <ArrowRight size={14} /></button>
                 </div>
               </div>
             )}
 
             {step === 5 && (
               <div className="bd-step-body bd-step-body--sm">
-                <ReviewGroup title="Locations" Icon={MapPin}>
+                <ReviewGroup title="Locations" Icon={MapPin} onEdit={() => setStep(1)}>
                   <RR label="Pickup" value={form.pickup?.address} />
                   <RR label="Drop-off" value={form.dropoff?.address} />
                   {routeInfo && <RR label="Route" value={`${routeInfo.distance} km · ~${routeInfo.durationLabel}`} />}
                   <RR label="Schedule" value={form.scheduleType === "now" ? "Now (ASAP)" : `${form.scheduleDate} ${form.scheduleTime}`} />
                 </ReviewGroup>
-                <ReviewGroup title="Recipient" Icon={UserRound}><RR label="Name" value={form.recipientName} /><RR label="Contact" value={form.recipientPhone} />{form.recipientUnit && <RR label="Unit/Floor" value={form.recipientUnit} />}</ReviewGroup>
-                <ReviewGroup title="Package" Icon={Package}>
+                <ReviewGroup title="Recipient" Icon={UserRound} onEdit={() => setStep(3)}><RR label="Name" value={form.recipientName} /><RR label="Contact" value={form.recipientPhone} />{form.recipientUnit && <RR label="Unit/Floor" value={form.recipientUnit} />}</ReviewGroup>
+                <ReviewGroup title="Package" Icon={Package} onEdit={() => setStep(4)}>
                   <RR label="Vehicle" value={selVehicle?.label} />
                   <RR label="Delivery Type" value={form.deliveryType ? (form.deliveryType === "priority" ? "Priority" : "Regular") : undefined} />
                   <RR label="Items" value={selItems.map(i => i.label).join(", ") || undefined} />
@@ -355,37 +399,27 @@ const BookDeliveryPage = ({ savedAddresses = [], onSaveAddress }) => {
                   {selHandling.length > 0 && <RR label="Handling" value={selHandling.map(i => i.label).join(", ")} />}
                   {form.notesToDriver && <RR label="Notes" value={form.notesToDriver} />}
                 </ReviewGroup>
-                <ReviewGroup title="Payment" Icon={CreditCard}>
-                  <RR label="Method" value="Cash (collected by driver after pickup)" />
-                  <RR label="Payer" value="Sender" />
-                  {estimate && <>
-                    <RR label="Base fare" value={peso(estimate.base)} />
-                    <RR label="First distance tier" value={peso(estimate.firstKm)} />
-                    <RR label="Remaining distance" value={peso(estimate.extraKm)} />
-                    {estimate.priority > 0 && <RR label="Priority surcharge (20%)" value={peso(estimate.priority)} />}
-                    <RR label="Estimated total" value={peso(estimate.total)} price />
-                    {credit > 0 && <RR label="Available cancellation credit" value={peso(Math.min(credit, estimate.total))} />}
-                    {credit > 0 && <RR label="Estimated amount due" value={peso(Math.max(0, estimate.total-credit))} price />}
-                  </>}
-                </ReviewGroup>
+                {/* Payment is fixed to sender-paid cash in this version. */}
+                {displayedFare ? <FareBreakdown breakdown={displayedFare} vehicleLabel={selVehicle?.label || "Vehicle"} credit={credit} /> :
+                  <p className="feature-error">Route price unavailable. Return to Locations and select both pins.</p>}
                 {bookingError && <p role="alert" style={{ color: "#b42318", marginBottom: 12 }}>{bookingError}</p>}
-                <div className="bd-safe-note"><ShieldCheck size={13} /> Final amount is recalculated by the backend using the full driving route.</div>
+                <div className="bd-safe-note"><ShieldCheck size={13} /> Cash is paid by the sender to the driver after pickup. Express calculates the final fare.</div>
 
-                <div className="bd-actions bd-actions--review"><button className="btn-bd-back" type="button" onClick={() => setStep(4)}><ArrowLeft size={14} /> Back</button><button className="btn-bd-book" type="button" onClick={handleConfirm} disabled={submitting}><Check size={14} /> {submitting ? "Saving booking…" : "Confirm booking"}</button></div>
+                <div className="bd-actions bd-actions--review"><button className="btn-bd-back" type="button" onClick={() => setStep(4)}><ArrowLeft size={14} /> Back</button><button className="btn-bd-book" type="button" onClick={handleConfirm} disabled={submitting || !displayedFare}><Check size={14} /> {submitting ? "Saving booking…" : "Confirm booking"}</button></div>
               </div>
             )}
           </div>
         </div>
 
         <div className={`bd-map${!isLocStep ? " bd-map--hidden" : ""}${mapExpanded ? " bd-map--expanded" : ""}`}>
-          <MapPicker ref={mapRef} onPickupChange={handlePickup} onDropoffChange={handleDropoff} onRouteChange={setRouteInfo} mapMode={mapMode} pickupCoords={form.pickup} dropoffCoords={form.dropoff} />
+          <MapPicker ref={mapRef} onPickupChange={handlePickup} onDropoffChange={handleDropoff} onRouteChange={setRouteInfo} mapMode={mapMode} pickupCoords={form.pickup} dropoffCoords={form.dropoff} userCoords={userPosition} />
           <MapModeSwitcher mode={mapMode} setMode={setMapMode} pickup={form.pickup} dropoff={form.dropoff} onClear={handleClear} />
           <MapZoomControls mapRef={mapRef} />
           <button type="button" className="map-expand-btn" onClick={() => setMapExpanded(v => !v)} title={mapExpanded ? "Collapse map" : "Expand map"}>{mapExpanded ? <FiMinimize2 size={16} /> : <FiMaximize2 size={16} />}</button>
           <MapSearchBar mode={mapMode} onSearch={(pin) => { if (mapMode === "pickup") handlePickup(pin); else handleDropoff(pin); }} />
         </div>
 
-        {showSavedPicker && (<LocationChooserModal mode={showSavedPicker} addresses={savedAddresses} onPickSaved={useSaved} onPinOnMap={useMapPicker} onClose={() => setShowSavedPicker(null)} />)}
+        {showSavedPicker && (<LocationChooserModal mode={showSavedPicker} addresses={savedAddresses} onPickSaved={useSaved} onPinOnMap={useMapPicker} onClose={() => setShowSavedPicker(null)} currentLocation={showSavedPicker === "pickup" ? { busy: gpsLoading, onUse: useMyLocation, error: gpsMessage } : null} />)}
 
         {showSuccess && (
           <div className="success-modal" role="dialog" aria-modal="true" aria-labelledby="success-title">

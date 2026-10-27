@@ -1,5 +1,8 @@
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { DriverTrackingProvider, useDriverTracking } from "../context/DriverTrackingContext.jsx";
+import { BookingNotificationsProvider } from "../context/BookingNotificationsContext.jsx";
+import { useBookings } from "../hooks/useBookings.js";
 
 // Pages that everyone can visit
 import LoginPage from "../pages/auth/LoginPage.jsx";
@@ -79,6 +82,20 @@ function ProtectedRoute({ allowedRole }) {
   return <Outlet />;
 }
 
+function CustomerBookingLayout() {
+  const bookingFeed = useBookings();
+  return <BookingNotificationsProvider role="customer" bookingFeed={bookingFeed}><Outlet /></BookingNotificationsProvider>;
+}
+
+function DriverNotificationLayout() {
+  const bookingFeed = useDriverTracking();
+  return <BookingNotificationsProvider role="driver" bookingFeed={bookingFeed}><Outlet /></BookingNotificationsProvider>;
+}
+
+function DriverTrackingLayout() {
+  return <DriverTrackingProvider><DriverNotificationLayout /></DriverTrackingProvider>;
+}
+
 export default function AppRoutes({
   savedAddresses,
   onSaveAddress,
@@ -95,20 +112,24 @@ export default function AppRoutes({
 
       {/* Customer pages */}
       <Route element={<ProtectedRoute allowedRole="customer" />}>
+        <Route element={<CustomerBookingLayout />}>
         <Route path={ROUTES.bookDelivery} element={<BookDeliveryPage savedAddresses={savedAddresses} onSaveAddress={onSaveAddress} />} />
         <Route path={ROUTES.activeDelivery} element={<ActiveDeliveryPage />} />
         <Route path={ROUTES.history} element={<OrderHistoryPage />} />
         <Route path={ROUTES.userProfile} element={<UserProfilePage savedAddresses={savedAddresses} onSaveAddress={onSaveAddress} onUpdateAddress={onUpdateAddress} onDeleteAddress={onDeleteAddress} />} />
         <Route path={ROUTES.userNotifications} element={<UserNotificationsPage />} />
+        </Route>
       </Route>
 
       {/* Driver pages */}
       <Route element={<ProtectedRoute allowedRole="driver" />}>
+        <Route element={<DriverTrackingLayout />}>
         <Route path={ROUTES.driverHome} element={<DriverHomePage />} />
         <Route path={ROUTES.driverHistory} element={<DriverHistoryPage />} />
         <Route path={ROUTES.driverProfile} element={<DriverProfilePage />} />
         <Route path={ROUTES.driverWallet} element={<DriverWalletPage />} />
         <Route path={ROUTES.driverNotifications} element={<DriverNotificationsPage />} />
+        </Route>
       </Route>
 
       {/* Administrator pages share one sidebar layout */}

@@ -2549,3 +2549,99 @@ width: 100%;
 .feature-chart-row { display: grid; grid-template-columns: 80px 1fr 40px; gap: 12px; align-items: center; font-size: 13px; }
 .feature-chart-track { background: #edf2f7; border-radius: 20px; height: 14px; overflow: hidden; }
 .feature-chart-bar { height: 100%; border-radius: 20px; background: #265d9f; }
+
+
+/* VISUAL PARITY WITH TEAM FRONTEND (Oct 25)
+   Our API connected React pages are retained. These CSS changes only
+   restore the typography and spacing from the original admin design.
+   No data, roles, endpoints, or database collections are changed. */
+.actionBtn { font-size: 14px; }
+.actionDropdown button { font-size: 16px; }
+.adminAvatar { font-size: 14px; }
+.adminText b { font-size: 16px; }
+.adminText small,.profile small { font-size: 14px; }
+.approveBtn { font-size: 14px; }
+.badge { font-size: 14px; }
+.barWrap small { font-size: 14px; }
+.brand span { font-size: 14px; }
+.brand strong { font-size: 18px; }
+.cardHead select { font-size: 16px; }
+.count { font-size: 14px; }
+.dashboardReportBars .reportMonth small { font-size: 14px; }
+.detailGrid { font-size: 16px; }
+.detailsCard { font-size: 16px; }
+.driverTable { font-size: 16px; }
+.driverTable td.id { font-size: 14px; }
+.driverTable thead { font-size: 14px; }
+.dropTitle { font-size: 14px; }
+.dropTitle span { font-size: 14px; }
+.dropdown button { font-size: 16px; }
+.fileMetaCard { font-size: 16px; }
+.filterPills button { font-size: 14px; }
+.filterPills span { font-size: 14px; }
+.footerNote { font-size: 14px; }
+.fullSelect { font-size: 16px; }
+.holdBtn { font-size: 14px; }
+.legend { font-size: 14px; }
+.linkBtn { font-size: 14px; }
+.loginCard form label { font-size: 14px; }
+.loginCard>p { font-size: 16px; }
+.loginCard>small { font-size: 14px; }
+.loginError { font-size: 14px; }
+.loginEyebrow { font-size: 14px; }
+.miniStat span { font-size: 14px; }
+.modalHead h2 { font-size: 18px; }
+.modalLabel { font-size: 14px; }
+.muted { font-size: 14px; }
+.navItem { font-size: 16px; }
+.noResults { font-size: 16px; }
+.notesArea label { font-size: 14px; }
+.notesArea textarea { font-size: 16px; }
+.notificationDrop button small { font-size: 14px; }
+.pageHeader p { font-size: 16px; }
+.photoError { font-size: 14px; }
+.photoHint { font-size: 14px; }
+.photoRemoveButton { font-size: 14px; }
+.photoUploadLabel { font-size: 14px; }
+.positive { font-size: 14px; }
+.primary,.secondary { font-size: 16px; }
+.printSummary h2 { font-size: 18px; }
+.printSummary p { font-size: 14px; }
+.profile b { font-size: 16px; }
+.profileForm input { font-size: 16px; }
+.profileForm label { font-size: 14px; }
+.rejectBtn { font-size: 14px; }
+.reportMonth small { font-size: 14px; }
+.reportRow b { font-size: 14px; }
+.reportRow small { font-size: 14px; }
+.savedMessage { font-size: 16px; }
+.searchBox input { font-size: 16px; }
+.searchResults b { font-size: 16px; }
+.searchResults small { font-size: 14px; }
+.sectionLabel { font-size: 14px; }
+.settingCard h2 { font-size: 18px; }
+.settingCard input { font-size: 16px; }
+.settingCard label { font-size: 14px; }
+.settingCard>p { font-size: 16px; }
+.sidebarSectionTitle { font-size: 14px; }
+.smallNote { font-size: 14px; }
+.stat>p { font-size: 14px; }
+.statusActionCell .inlineEditBtn { font-size: 14px; }
+.statusBadgePending { font-size: 14px; }
+.statusHelpText { font-size: 14px; }
+.statusItem span { font-size: 14px; }
+.tabItem { font-size: 16px; }
+.toggleRow { font-size: 16px; }
+.toggleRow small { font-size: 14px; }
+.topAdminAvatar { font-size: 14px; }
+.yearSelectHeader { font-size: 14px; }
+td { font-size: 16px; }
+th { font-size: 14px; }
+
+/* Sidebar and toolbar proportions in the team's prototype. */
+.brand { gap: 12px; padding: 3px 13px 22px; }
+.brandMark { width: 48px; height: 48px; background: transparent; }
+.brand span { color: #8aa2bd; letter-spacing: 0; margin-top: 2px; }
+.searchBox { height: 44px; }
+.sectionLabel { padding: 14px 13px 8px; }
+/* The UI remains usable with the added moderator/finance panels. */

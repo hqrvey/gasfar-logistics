@@ -2,7 +2,12 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const isValidEmail = (value) => EMAIL_RE.test(value);
 
-export const peso = (value) => `₱${Number(value).toLocaleString()}`;
+export const peso = (value) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "₱—";
+  const hasCentavos = Math.round(number * 100) % 100 !== 0;
+  return `₱${number.toLocaleString("en-PH", { minimumFractionDigits: hasCentavos ? 2 : 0, maximumFractionDigits: 2 })}`;
+};
 
 export const STATUS = {
   pending: { label: "Waiting for driver", group: "ongoing", cls: "badge-pending" },

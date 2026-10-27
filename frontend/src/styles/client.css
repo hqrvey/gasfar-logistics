@@ -998,7 +998,10 @@ body{font-family:"DM Sans",sans-serif;-webkit-font-smoothing:antialiased;-moz-os
 .preview-card__eta{display:flex;align-items:baseline;gap:.15rem;line-height:1}
 .preview-card__eta-value{font-size:1.15rem;font-weight:800;color:var(--orange);letter-spacing:-.02em}
 .preview-card__eta-unit{font-size:.7rem;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:.06em}
-.preview-card__eta-to{font-size:.62rem;color:var(--muted);font-weight:500}
+.preview-card__eta-to{
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: #0d1b3e;}
 .preview-card__arrow{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--off-white);color:var(--muted);flex-shrink:0;transition:background .15s ease,color .15s ease,transform .15s ease}
 .preview-card:hover .preview-card__arrow{background:var(--orange);color:#fff;transform:translateX(2px)}
 
@@ -2298,3 +2301,745 @@ body{font-family:"DM Sans",sans-serif;-webkit-font-smoothing:antialiased;-moz-os
 .feature-signup-success { text-align: center; padding: 28px 16px; }
 .feature-signup-success h2 { margin-bottom: 12px; }
 .feature-signup-success p { margin-bottom: 22px; line-height: 1.55; }
+
+/* GASFAR MapLibre map pins. These replace the Google Maps marker images. */
+.gasfar-map-pin{width:25px;height:25px;box-sizing:border-box;border-radius:50%;border:3px solid white;box-shadow:0 2px 9px rgba(13,27,62,.3);cursor:pointer;background:#0D1B3E;display:flex;align-items:center;justify-content:center;}
+.gasfar-map-pin--pickup{background:#1976d2;}
+.gasfar-map-pin--dropoff{background:#F47B20;}
+.gasfar-map-pin--driver{width:42px;height:42px;background:#F47B20;border-width:4px;}
+.gasfar-map-pin--nearby{width:22px;height:22px;background:#16A34A;border-width:3px;}
+.gasfar-map-pin:hover{transform:scale(1.08);}
+.gasfar-map-error{position:absolute;bottom:20px;left:12px;z-index:950;background:white;color:#a52929;border-radius:8px;padding:9px 12px;font-size:.8rem;}
+.gasfar-map-route-legend{position:absolute;bottom:24px;left:12px;z-index:900;background:white;border-radius:10px;padding:8px 12px;box-shadow:0 2px 12px rgba(0,0,0,.12);max-width:calc(100% - 24px);font-size:12px;line-height:1.6;}
+/* MapLibre's required map attribution remains visible, even over booking UI. */
+.map-picker .maplibregl-ctrl-attrib{font-size:10px;}
+
+
+/* VISUAL PARITY WITH TEAM FRONTEND (Oct 25)
+   Two login tabs are present: Username and Phone Number.
+   Keep the two-column tabs, not the older three-column layout. */
+.login-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* Preserve the team's original focus feedback on sign-in and forms. */
+:root { --focus: #111111; --focus-ring: rgba(17,17,17,.12); }
+.input-field:focus,
+.otp-input:focus { border-color: var(--focus); box-shadow: 0 0 0 3px var(--focus-ring); }
+.phone-input-wrapper:focus-within { border-color: var(--focus); box-shadow: 0 0 0 3px var(--focus-ring); }
+.btn-signin:disabled { background: var(--off-white); color: var(--muted); cursor: not-allowed; }
+
+/* Bring the customer and driver profile layout closer to the original width. */
+.profile-page-wrap { max-width: 1240px; padding: 2rem 2.5rem; }
+.route-strip { gap: .65rem; }
+.order-expand__header { align-items: center; }
+.delivery-type-badge.priority { background: #F47B20; color: #fff; }
+@media (max-width: 640px) {
+  .profile-page-wrap { padding: 1rem; }
+}
+
+/* Booking wizard parity with groupmate's updated UI.
+   These selectors are visual only; they do not change the backend booking flow. */
+.rr-group__edit {margin-left:auto;background:none;border:0;color:#F47B20;font-weight:650;font-size:12px;cursor:pointer;padding:4px 7px;border-radius:6px}
+.rr-group__edit:hover {background:#fff3e8}
+.rr-group__edit:focus-visible {outline:2px solid #F47B20;outline-offset:2px}
+.fare-bd {border:1.5px solid #fcd9b6;background:#fff8f2;border-radius:11px;padding:14px 16px;margin-top:8px}
+.fare-bd__head {display:flex;justify-content:space-between;gap:10px;align-items:baseline;margin-bottom:10px}
+.fare-bd__title {font-size:14px;font-weight:800;color:#0D1B3E}
+.fare-bd__meta {font-size:12px;color:#8b93a3}
+.fare-bd__row {display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-top:1px solid #f6e3d0;font-size:13px}
+.fare-bd__item {display:flex;flex-direction:column;gap:3px}
+.fare-bd__name {color:#1a2035;font-weight:600}
+.fare-bd__calc {color:#8b93a3;font-size:12px}
+.fare-bd__amt {color:#1a2035;font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
+.fare-bd__row--credit .fare-bd__name,.fare-bd__row--credit .fare-bd__amt {color:#15803d}
+.fare-bd__total {display:flex;justify-content:space-between;align-items:center;margin-top:3px;padding-top:12px;border-top:1.5px solid #fcd9b6;font-weight:800;font-size:14px;color:#0D1B3E}
+.fare-bd__total-amt {font-size:24px;color:#F47B20;font-variant-numeric:tabular-nums}
+/* Keep the existing navy/orange pickup/drop-off pin colors and green radius.
+   The driver road route is now a dashed green GeoJSON line. */
+.gasfar-map-route-key {display:inline-block;width:24px;height:0;vertical-align:middle;margin:0 4px;border-top:4px solid #0D1B3E}
+.gasfar-map-route-key--driver {border-top:4px dashed #16A34A}
+.gasfar-map-user-position {width:23px;height:23px;border:3px solid #fff;border-radius:50%;background:#2563EB;box-shadow:0 0 0 6px rgba(37,99,235,.20),0 2px 8px rgba(0,0,0,.28)}
+@media (max-width:600px) {.fare-bd__total-amt{font-size:21px}.fare-bd__row{font-size:12px}}
+
+/* ================================================================
+   Booking / delivery UI parity with our team's Oct 25 frontend.
+   These are presentation-only rules. Maps, GPS and the REST API are
+   intentionally unchanged. Pickup/drop-off map pins and driver-radius
+   colors remain exactly as before.
+   ================================================================ */
+
+/* A large clickable card shows the complete route for a pending job. */
+.booking-pending-card {
+  display: block;
+  width: 100%;
+  padding: 22px 24px;
+  text-align: left;
+  font-family: inherit;
+  color: #0d1b3e;
+  cursor: pointer;
+  border: 1px solid #dbe3ee;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 9px rgba(13,27,62,.04);
+  transition: border-color .16s, box-shadow .16s, transform .16s;
+}
+.booking-pending-card:hover,
+.booking-pending-card:focus-visible {
+  border-color: #0d1b3e;
+  box-shadow: 0 5px 18px rgba(13,27,62,.10);
+  outline-offset: 2px;
+}
+.booking-pending-card:active { transform: scale(.996); }
+.booking-pending-card__top,
+.booking-pending-card__foot,
+.booking-pending-card__tags { display: flex; align-items: center; gap: 10px; }
+.booking-pending-card__top { justify-content: space-between; margin-bottom: 14px; }
+.booking-pending-card__badge { padding: 7px 14px; background: #eef7ff; color: #03659b; font-size: 12px; font-weight: 800; border-radius: 999px; letter-spacing: .04em; }
+.booking-pending-card__id { font-weight: 700; font-size: 12px; color: #a9b5c7; overflow-wrap: anywhere; }
+.booking-pending-card__place { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; }
+.booking-pending-card__place + .booking-pending-card__place { border-top: 1px solid #e6eaf2; }
+.booking-pending-card__place > span:last-child { min-width: 0; }
+.booking-pending-card__place small { display: block; font-size: 12px; letter-spacing: .06em; color: #8a96aa; font-weight: 700; margin: 0 0 4px; }
+.booking-pending-card__place strong { font-size: 14px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; display: block; }
+.booking-pending-card__pin { width: 31px; height: 31px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; }
+.booking-pending-card__pin--pickup { background: #2862e8; }
+.booking-pending-card__pin--dropoff { background: #fa7c20; }
+.booking-pending-card__tags { flex-wrap: wrap; margin-top: 8px; margin-bottom: 12px; }
+.booking-pending-card__tags span { background: #f3f6f9; border-radius: 999px; padding: 5px 12px; font-size: 12px; font-weight: 600; color: #394760; }
+.booking-pending-card__foot { justify-content: space-between; border-top: 1px dashed #dce4ef; padding-top: 13px; }
+.booking-pending-card__foot span { color: #69778c; font-size: 12px; }
+.booking-pending-card__foot strong { white-space: nowrap; font-size: 19px; font-weight: 800; color: #0d1b3e; }
+
+/* Make the large GPS/map picker choices resemble the prototype. */
+.loc-pick-map:disabled { opacity: .68; cursor: wait; }
+.loc-pick-map__title { margin: 0; }
+.loc-pick-map__sub { line-height: 1.45; }
+
+/* Keep real ETA readable at mobile widths. */
+.preview-card__right { min-width: 75px; text-align: right; }
+.preview-card__eta-to { white-space: normal; }
+.active-details-route .booking-pending-card__pin { margin-top: 1px; }
+
+@media (max-width: 640px) {
+  .booking-pending-card { padding: 16px 15px; }
+  .booking-pending-card__foot { align-items: flex-end; }
+  .booking-pending-card__foot span { max-width: 70%; line-height: 1.5; }
+  .booking-pending-card__foot strong { font-size: 16px; }
+  .preview-card__right { min-width: 60px; }
+}
+
+/* ============================================================
+   Five-stage delivery UI parity (gasfar-vite 2 visual reference)
+   Only presentation is changed. Map pins, driver radius, GPS,
+   and backend booking statuses keep their original behavior.
+   ============================================================ */
+.order-expand__summary {
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;
+  padding:12px 16px;border:1px solid #dfe5ef;border-radius:12px;
+  background:#f6f8fb;
+}
+.order-expand__summary-item {display:flex;flex-direction:column;gap:3px}
+.order-expand__summary-item--right {align-items:flex-end;text-align:right}
+.order-expand__toggle {
+  width:100%;display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:10px;border:0;border-radius:8px;background:transparent;
+  color:#0d1b3e;font-family:inherit;font-size:.85rem;font-weight:700;cursor:pointer;
+  transition:background .16s ease,color .16s ease;
+}
+.order-expand__toggle:hover {background:#f3f6fa;color:#ed751a}
+.earnings-box {padding:14px 16px;border:1px solid #e0e6ef;border-radius:11px;background:#fafbfc}
+.earnings-box__row {display:flex;justify-content:space-between;gap:14px;padding:6px 0;color:#526071;font-size:.84rem}
+.earnings-box__row span:last-child {text-align:right;font-variant-numeric:tabular-nums}
+.earnings-box__row--note {color:#7f8998;font-size:.79rem}
+.earnings-box__row--minus {color:#a56220}
+.earnings-box__row--total {margin-top:7px;padding-top:13px;border-top:1px solid #e1e6ed;color:#0d1b3e;font-weight:800;font-size:.98rem}
+.earnings-box__note {margin:10px 0 0;font-size:.78rem;color:#7b8696;line-height:1.55}
+.cancel-waiver {display:flex;align-items:flex-start;gap:11px;padding:12px 13px;border:1px solid #e0e6ee;border-radius:10px;cursor:pointer;text-align:left}
+.cancel-waiver input {margin-top:4px;accent-color:#f47b20}
+.cancel-waiver span {display:flex;flex-direction:column;gap:4px}
+.cancel-waiver strong {font-size:.86rem;color:#14213d}
+.cancel-waiver small {font-size:.78rem;color:#6f7c8d;line-height:1.5}
+.delivery-cash-notice {display:flex;align-items:flex-start;gap:10px;margin:0 0 14px}
+.delivery-cash-notice svg {flex-shrink:0;margin-top:3px}
+.active-driver-card__photo {display:block;width:100%;height:100%;border-radius:50%;object-fit:cover}
+.active-cancel-note {color:#7c8695;font-size:.85rem;line-height:1.6;padding:6px 20px 20px;margin:0}
+/* Fixed Undo notice remains accessible while the user navigates through cards. */
+.undo-toast {
+  position:fixed;z-index:10010;bottom:28px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:12px;max-width:min(480px,calc(100vw - 24px));
+  padding:14px 17px 17px;background:#0d1b3e;border-radius:12px;color:white;
+  box-shadow:0 12px 32px rgba(13,27,62,.28);overflow:hidden;
+  animation:gasfarUndoEnter .22s ease-out;
+}
+.undo-toast__text {font-size:.83rem;line-height:1.4;flex:1;min-width:0}
+.undo-toast__btn {padding:7px 11px;border:0;border-radius:8px;background:rgba(255,255,255,.13);color:#ff943f;cursor:pointer;font-size:.83rem;font-weight:800;white-space:nowrap}
+.undo-toast__btn:hover {background:rgba(255,255,255,.23)}
+.undo-toast__bar {position:absolute;left:0;bottom:0;height:3px;width:100%;background:#f47b20;transform-origin:left;animation:gasfarUndoProgress linear forwards}
+@keyframes gasfarUndoProgress {from{transform:scaleX(1)}to{transform:scaleX(0)}}
+@keyframes gasfarUndoEnter {from{opacity:0;transform:translate(-50%,16px)}to{opacity:1;transform:translate(-50%,0)}}
+@media (max-width:520px) {
+  .order-expand__summary{padding:10px 12px}
+  .undo-toast{width:calc(100vw - 24px);bottom:14px;flex-wrap:wrap}
+  .undo-toast__btn{margin-left:auto}
+  .active-eta-card__value{font-size:1.35rem}
+}
+@media (prefers-reduced-motion:reduce) {
+  .undo-toast,.undo-toast__bar{animation:none}
+}
+
+/* --- Delivery UI consistency refresh (customer + driver) --- */
+.preview-card--flat {
+  align-items: center;
+  border-radius: 16px;
+  border: 1px solid #d8dfeb;
+  box-shadow: 0 2px 10px rgba(13, 27, 62, 0.05);
+  padding: 1rem 1.05rem;
+}
+.preview-card--flat:hover,
+.preview-card--flat:focus-visible {
+  border-color: #d8dfeb;
+  box-shadow: 0 2px 10px rgba(13, 27, 62, 0.05);
+  transform: none;
+}
+.preview-card--flat:active {
+  transform: scale(.995);
+  box-shadow: 0 3px 12px rgba(13, 27, 62, 0.08);
+}
+.preview-card__meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  margin-top: .35rem;
+}
+.preview-card__meta-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: .25rem .7rem;
+  background: #eef3fb;
+  color: #0d1b3e;
+  font-size: .73rem;
+  font-weight: 700;
+}
+.preview-card__meta-chip--muted {
+  background: #f5f7fa;
+  color: #667085;
+  font-weight: 600;
+}
+.preview-card__right--compact {
+  min-width: 82px;
+  gap: .2rem;
+}
+.preview-card__price {
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: #0d1b3e;
+}
+.preview-card__arrow--plain {
+  background: #f2f5fa;
+  color: #8b93a3;
+}
+.preview-card__status--pending,
+.preview-card__status--assigned,
+.preview-card__status--enroute,
+.preview-card__status--transit,
+.preview-card__status--arrived,
+.preview-card__status--done {
+  font-size: .72rem;
+  letter-spacing: .02em;
+}
+.preview-card__status--pending,
+.preview-card__status--assigned { color: #0d1b3e; }
+.preview-card__status--enroute { color: #16a34a; }
+.preview-card__status--transit { color: #2563eb; }
+.preview-card__status--arrived { color: #f47b20; }
+.preview-card__status--done { color: #0d1b3e; }
+.preview-card__status--pending .preview-card__pending-dots span { background: #f47b20; }
+.preview-card__status--assigned .preview-card__live-dot { background: #0d1b3e; animation: none; }
+.preview-card__status--transit .preview-card__live-dot { background: #2563eb; }
+.preview-card__status--arrived .preview-card__live-dot { background: #f47b20; animation: none; }
+.preview-card__status--done .preview-card__live-dot { background: #0d1b3e; animation: none; }
+.preview-card--assigned .preview-card__avatar { background: #eff4ff; color: #0d1b3e; }
+.preview-card--enroute .preview-card__avatar { background: #0d1b3e; color: #fff; }
+.preview-card--transit .preview-card__avatar { background: #eff6ff; color: #2563eb; }
+.preview-card--arrived .preview-card__avatar { background: #fff4ea; color: #f47b20; }
+.preview-card--pending { background: #fff; }
+.preview-card--pending .preview-card__driver { font-weight: 800; }
+.preview-card__route { line-height: 1.45; }
+.preview-card__row1 { justify-content: space-between; width: 100%; }
+.preview-card__id { margin-left: auto; }
+
+.active-timeline--rich {
+  gap: 0;
+  padding: 0;
+  border: 1px solid #e1e5eb;
+  overflow: hidden;
+}
+.active-timeline--rich .active-timeline__item {
+  position: relative;
+  align-items: flex-start;
+  gap: .9rem;
+  padding: .95rem 1.1rem;
+}
+.active-timeline--rich .active-timeline__item + .active-timeline__item {
+  border-top: 1px solid #eef1f5;
+}
+.active-timeline--rich .active-timeline__dot {
+  margin-top: .1rem;
+  width: 28px;
+  height: 28px;
+  background: #eef1f5;
+  color: #8b93a3;
+}
+.active-timeline--rich .active-timeline__copy {
+  display: flex;
+  flex-direction: column;
+  gap: .16rem;
+  min-width: 0;
+}
+.active-timeline--rich .active-timeline__label {
+  color: #334155;
+  font-size: .9rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.active-timeline--rich .active-timeline__desc {
+  color: #8b93a3;
+  font-size: .76rem;
+  line-height: 1.45;
+}
+.active-timeline--rich .active-timeline__item.done .active-timeline__dot {
+  background: #f47b20;
+  color: #fff;
+}
+.active-timeline--rich .active-timeline__item.done .active-timeline__label,
+.active-timeline--rich .active-timeline__item.active .active-timeline__label {
+  color: #0d1b3e;
+}
+.active-timeline--rich .active-timeline__item.active .active-timeline__dot {
+  background: #0d1b3e;
+  color: #fff;
+  box-shadow: 0 0 0 4px rgba(13, 27, 62, 0.12);
+}
+.active-timeline--rich .active-timeline__item.active .active-timeline__desc {
+  color: #667085;
+}
+.active-timeline--driver { margin-top: .25rem; }
+
+.active-driver-card,
+.active-details-card,
+.order-expand__summary,
+.order-expand__toggle,
+.active-timeline--rich {
+  border-radius: 16px;
+}
+
+.active-delivery-card {
+  display: flex;
+  /* Override the older column layout above. Keep the whole booking in one row. */
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: .95rem;
+  padding: 1rem 1.05rem;
+  background: #fff;
+  border: 1px solid #d8dfeb;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .15s ease;
+  width: 100%;
+  text-align: left;
+  box-shadow: 0 2px 10px rgba(13, 27, 62, .05);
+}
+.active-delivery-card:hover {
+  border-color: #bcc8dd;
+  box-shadow: 0 5px 16px rgba(13, 27, 62, .09);
+  transform: translateY(-1px);
+}
+.active-delivery-card__avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #0d1b3e;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.active-delivery-card__body {
+  min-width: 0;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+  gap: .2rem;
+}
+.active-delivery-card__row1 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+.active-delivery-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+.active-delivery-card__status--assigned { color: #0d1b3e; }
+.active-delivery-card__status--enroute { color: #16a34a; }
+.active-delivery-card__status--transit { color: #2563eb; }
+.active-delivery-card__status--arrived { color: #f47b20; }
+.active-delivery-card__status--done { color: #0d1b3e; }
+.delivery-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.active-delivery-card__id {
+  font-size: .72rem;
+  font-weight: 700;
+  color: #98a2b3;
+  letter-spacing: .04em;
+}
+.active-delivery-card__customer {
+  margin: 0;
+  font-size: .98rem;
+  font-weight: 800;
+  color: #0d1b3e;
+}
+.active-delivery-card__meta,
+.active-delivery-card__route {
+  margin: 0;
+  font-size: .78rem;
+  line-height: 1.45;
+  color: #667085;
+}
+.active-delivery-card__right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: .35rem;
+  flex-shrink: 0;
+}
+.active-delivery-card__price {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #0d1b3e;
+  white-space: nowrap;
+}
+.active-delivery-card__arrow {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: #f2f5fa;
+  color: #8b93a3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.active-delivery-card:hover .active-delivery-card__arrow {
+  background: #0d1b3e;
+  color: #fff;
+}
+.active-delivery-card--assigned .active-delivery-card__avatar { background: #eff4ff; color: #0d1b3e; }
+.active-delivery-card--transit .active-delivery-card__avatar { background: #eff6ff; color: #2563eb; }
+.active-delivery-card--arrived .active-delivery-card__avatar { background: #fff4ea; color: #f47b20; }
+
+@media (max-width: 768px) {
+  .preview-card--flat,
+  .active-delivery-card {
+    padding: .9rem;
+    gap: .8rem;
+  }
+  .active-timeline--rich .active-timeline__item {
+    padding: .85rem .95rem;
+  }
+  .preview-card__meta-row {
+    gap: .35rem;
+  }
+  .active-delivery-card__arrow,
+  .preview-card__arrow {
+    display: none;
+  }
+}
+.preview-card--flat:hover .preview-card__arrow {
+  background: #f2f5fa;
+  color: #8b93a3;
+  transform: none;
+}
+.preview-card--flat:hover .preview-card__arrow--plain {
+  background: #f2f5fa;
+  color: #8b93a3;
+}
+
+/* Center-on-me and full-route controls, available to customers and drivers.
+   They change only the camera, not the GPS tracking or route requests. */
+.gasfar-map-camera-actions {
+  position: absolute;
+  right: 12px;
+  bottom: 42px;
+  z-index: 905;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+}
+.gasfar-map-camera-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  border: 1px solid #d8dfeb;
+  border-radius: 9px;
+  padding: 7px 10px;
+  background: #fff;
+  color: #0d1b3e;
+  box-shadow: 0 2px 8px rgba(13, 27, 62, .12);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.gasfar-map-camera-btn:hover { background: #f4f7fb; }
+.gasfar-map-camera-btn:focus-visible { outline: 2px solid #f47b20; outline-offset: 2px; }
+.gasfar-map-camera-btn span { color: #f47b20; font-size: 17px; line-height: 1; }
+@media (max-width: 640px) {
+  .gasfar-map-camera-actions { right: 9px; bottom: 32px; }
+  .gasfar-map-camera-btn { padding: 6px 8px; font-size: 11px; }
+}
+
+
+/* Pending booking design: retain the detailed route card with NO hover animation.
+   The outline remains for keyboard users who navigate with Tab. */
+.booking-pending-card {
+  transition: none;
+}
+.booking-pending-card:hover {
+  border-color: #dbe3ee;
+  box-shadow: 0 2px 9px rgba(13,27,62,.04);
+  transform: none;
+}
+.booking-pending-card:focus-visible {
+  border-color: #dbe3ee;
+  outline: 2px solid #f47b20;
+  outline-offset: 3px;
+}
+.booking-pending-card:active {
+  transform: none;
+}
+
+/* The compact driver card must remain readable on narrow phones. */
+@media (max-width: 560px) {
+  .active-delivery-card__avatar {
+    width: 38px;
+    height: 38px;
+  }
+  .active-delivery-card__row1 {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: .15rem .5rem;
+  }
+  .active-delivery-card__id {
+    flex-basis: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    font-size: .67rem;
+    overflow-wrap: anywhere;
+  }
+  .active-delivery-card__right { align-self: center; }
+}
+
+/* Consistent ongoing list layout for both roles. The shared OngoingDeliveryCard
+   already uses preview-card styles; these only align the driver tab spacing and
+   handle long booking IDs on phone screens. Pending booking cards are untouched. */
+.driver-home__tabs--ongoing { margin-bottom: .5rem; }
+.driver-home__list--ongoing { gap: .65rem; padding-top: .5rem; }
+
+@media (max-width: 560px) {
+  .preview-card--flat .preview-card__row1 {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: .2rem .5rem;
+  }
+  .preview-card--flat .preview-card__id {
+    flex-basis: 100%;
+    min-width: 0;
+    margin-left: 0;
+    overflow-wrap: anywhere;
+  }
+}
+/* The shared component uses spans instead of paragraphs; keep ellipsis working
+   for long names and routes on both customer and driver cards. */
+.preview-card--flat .preview-card__driver,
+.preview-card--flat .preview-card__route { display: block; }
+
+/* Ongoing cards (customer + driver): roomy shared layout, booking ID top-right.
+   These rules affect ONLY the shared OngoingDeliveryCard, not pending cards. */
+.preview-card--ongoing {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) minmax(68px, auto) 32px;
+  grid-template-rows: 22px minmax(62px, auto);
+  column-gap: 13px;
+  row-gap: 2px;
+  min-height: 132px;
+  padding: 18px 19px;
+  align-items: center;
+}
+.preview-card--ongoing .preview-card__avatar {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  width: 46px;
+  height: 46px;
+  align-self: center;
+  font-size: 1rem;
+}
+.preview-card--ongoing .preview-card__id {
+  grid-column: 2 / 5;
+  grid-row: 1;
+  justify-self: end;
+  align-self: start;
+  min-width: 0;
+  margin: 0;
+  font-size: .72rem;
+  font-weight: 700;
+  color: #9aa7bc;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.preview-card--ongoing .preview-card__body {
+  grid-column: 2;
+  grid-row: 2;
+  width: 100%;
+  min-width: 0;
+  gap: .35rem;
+  align-self: center;
+}
+.preview-card--ongoing .preview-card__status {
+  font-size: .75rem;
+}
+.preview-card--ongoing .preview-card__driver {
+  font-size: .92rem;
+  line-height: 1.35;
+}
+.preview-card--ongoing .preview-card__route {
+  font-size: .78rem;
+  line-height: 1.4;
+}
+.preview-card--ongoing .preview-card__right {
+  grid-column: 3;
+  grid-row: 2;
+  min-width: 0;
+  align-self: center;
+  padding: 0;
+}
+.preview-card--ongoing .preview-card__arrow {
+  grid-column: 4;
+  grid-row: 2;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-self: center;
+  border-radius: 50%;
+  background: #0d1b3e;
+  color: #fff;
+  transform: none;
+  transition: background-color .16s ease, color .16s ease;
+}
+/* Only the arrow reacts, not the card's border, height, or shadow. */
+.preview-card--ongoing:hover .preview-card__arrow {
+  background: #0d1b3e;
+  color: #fff;
+  transform: none;
+}
+.preview-card--ongoing .preview-card__arrow:hover {
+  background: #e9edf3;
+  color: #64748b;
+  transform: none;
+}
+
+@media (max-width: 600px) {
+  .preview-card--ongoing {
+    grid-template-columns: 40px minmax(0, 1fr) auto 30px;
+    grid-template-rows: auto auto;
+    min-height: 147px;
+    padding: 15px;
+    column-gap: 9px;
+    row-gap: 9px;
+  }
+  .preview-card--ongoing .preview-card__id {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .preview-card--ongoing .preview-card__avatar {
+    grid-column: 1;
+    grid-row: 2;
+    width: 40px;
+    height: 40px;
+  }
+  .preview-card--ongoing .preview-card__body {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .preview-card--ongoing .preview-card__right {
+    grid-column: 3;
+    grid-row: 2;
+  }
+  .preview-card--ongoing .preview-card__arrow {
+    grid-column: 4;
+    grid-row: 2;
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+  }
+}
+
+/* Give phone screens a third row for ETA/fare and the arrow, rather than
+   squeezing the name, route, and controls onto one cramped line. */
+@media (max-width: 600px) {
+  .preview-card--ongoing {
+    grid-template-columns: 40px minmax(0, 1fr) 30px;
+    grid-template-rows: auto auto auto;
+    row-gap: 10px;
+    min-height: 160px;
+  }
+  .preview-card--ongoing .preview-card__avatar {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .preview-card--ongoing .preview-card__body {
+    grid-column: 2 / 4;
+    grid-row: 2;
+  }
+  .preview-card--ongoing .preview-card__driver,
+  .preview-card--ongoing .preview-card__route {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+  .preview-card--ongoing .preview-card__right {
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: start;
+    align-items: flex-start;
+  }
+  .preview-card--ongoing .preview-card__arrow {
+    grid-column: 3;
+    grid-row: 3;
+    justify-self: end;
+  }
+}
